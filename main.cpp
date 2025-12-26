@@ -1,8 +1,8 @@
 /**
- * VISUAL REGEX BUILDER (Console Edition)
+ * VISUAL REGEX BUILDER (Pro Edition - Live Playground)
  * Language: C++
  * Library: Raylib
- * Description: A node editor with a drop-down console to input directories.
+ * Description: Node editor with Console, Live Regex Testing Playground, and continuous input handling.
  */
 
 #include "raylib.h"
@@ -13,8 +13,8 @@
 #include <cmath>
 #include <algorithm>
 #include <regex> 
-#include <fstream>      // Necesario para leer archivos
-#include <filesystem>   // Necesario para recorrer directorios (C++17)
+#include <fstream>
+#include <filesystem>
 
 // ----------------------------------------------------------------------------------
 // Data Structures
@@ -58,15 +58,30 @@ int connectionStartNodeId = -1;
 Camera2D camera = { 0 };
 Font mainFont = { 0 };
 
-// CONSOLE SYSTEM
+// SYSTEMS STATE
 bool showConsole = false;
+bool showPlayground = false;
+bool showHelp = false; // POINT 2: Help Toggle
+
+// CONSOLE DATA
 std::string consoleInput = "";
 std::vector<std::string> consoleLog;
-float cursorBlinkTimer = 0.0f;
-int consoleScrollIndex = 0;     // Indice de la línea superior visible
-bool isDraggingScrollbar = false; // Estado del arrastre de la barra
+int consoleScrollIndex = 0;
+bool isDraggingScrollbar = false;
 
-// Cyberpunk Palette
+// PLAYGROUND DATA
+std::string playgroundText = "Hello World! Type here to test.\nUser123, Admin99.\nMulti-line support added.";
+Rectangle playgroundRect = { 0, 0, 0, 0 };
+float playgroundScrollOffset = 0.0f;
+bool isDraggingPlaygroundScroll = false;
+
+// INPUT TIMING
+float cursorBlinkTimer = 0.0f;
+float keyRepeatTimer = 0.0f;
+const float KEY_REPEAT_DELAY = 0.5f;
+const float KEY_REPEAT_RATE = 0.05f;
+
+// COLORS
 const Color COL_BG = { 20, 24, 35, 255 };      
 const Color COL_GRID = { 40, 45, 60, 255 };    
 const Color COL_WIRE = { 200, 200, 200, 150 };       
@@ -152,24 +167,16 @@ std::string GenerateRegex() {
 void DrawGrid2D(int slices, float spacing) {
     Vector2 topLeft = GetScreenToWorld2D({0, 0}, camera);
     Vector2 bottomRight = GetScreenToWorld2D({(float)GetScreenWidth(), (float)GetScreenHeight()}, camera);
-    
     float startX = floor(topLeft.x / spacing) * spacing;
     float startY = floor(topLeft.y / spacing) * spacing;
-    
-    for (float x = startX; x < bottomRight.x + spacing; x += spacing) {
-        DrawLineV({x, topLeft.y}, {x, bottomRight.y}, COL_GRID);
-    }
-    for (float y = startY; y < bottomRight.y + spacing; y += spacing) {
-        DrawLineV({topLeft.x, y}, {bottomRight.x, y}, COL_GRID);
-    }
+    for (float x = startX; x < bottomRight.x + spacing; x += spacing) DrawLineV({x, topLeft.y}, {x, bottomRight.y}, COL_GRID);
+    for (float y = startY; y < bottomRight.y + spacing; y += spacing) DrawLineV({topLeft.x, y}, {bottomRight.x, y}, COL_GRID);
 }
 
 // CONSOLE LOGIC
 void AddLog(std::string msg) {
     consoleLog.push_back(msg);
-    // Limite aumentado para soportar scroll
     if (consoleLog.size() > 1000) consoleLog.erase(consoleLog.begin());
-    // Auto-scroll al final
     consoleScrollIndex = consoleLog.size(); 
 }
 
@@ -178,74 +185,50 @@ void ProcessConsoleCommand() {
     AddLog("> " + consoleInput);
     
     std::string regStr = GenerateRegex();
-    if (regStr.empty()) {
-        AddLog("[ERROR] Regex is empty. Add nodes first.");
-        consoleInput = "";
-        return;
-    }
+    if (regStr.empty()) { AddLog("[ERROR] Empty Regex."); consoleInput = ""; return; }
 
-    // 1. Validar Ruta Real
     std::filesystem::path path(consoleInput);
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
-        AddLog("[ERROR] Path not found on disk.");
-        consoleInput = "";
-        return;
-    }
+    if (!std::filesystem::exists(path, ec)) { AddLog("[ERROR] Path not found."); consoleInput = ""; return; }
 
-    AddLog("Processing real files...");
-    
+    AddLog("Scanning...");
     try {
         std::regex pattern(regStr);
         int totalMatches = 0;
         int filesScanned = 0;
-
-        // Función auxiliar para leer y analizar un solo archivo
         auto processFile = [&](const std::filesystem::path& filePath) {
             std::ifstream file(filePath);
             if (!file.is_open()) return;
-
-            // Leer todo el contenido
-            std::stringstream buffer;
-            buffer << file.rdbuf();
-            std::string content = buffer.str();
-
-            // Buscar coincidencias
-            auto words_begin = std::sregex_iterator(content.begin(), content.end(), pattern);
-            auto words_end = std::sregex_iterator();
-            int count = std::distance(words_begin, words_end);
-
-            if (count > 0) {
-                AddLog("HIT: " + filePath.filename().string() + " (" + std::to_string(count) + ")");
-                totalMatches += count;
-            }
+            std::stringstream buffer; buffer << file.rdbuf(); std::string content = buffer.str();
+            auto b = std::sregex_iterator(content.begin(), content.end(), pattern);
+            auto e = std::sregex_iterator();
+            int count = std::distance(b, e);
+            if (count > 0) { AddLog("HIT: " + filePath.filename().string() + " (" + std::to_string(count) + ")"); totalMatches += count; }
             filesScanned++;
         };
-
-        // 2. Determinar si es Archivo o Carpeta
         if (std::filesystem::is_directory(path)) {
-            AddLog("[INFO] Scanning directory...");
-            for (const auto& entry : std::filesystem::directory_iterator(path)) {
-                if (entry.is_regular_file()) {
-                    processFile(entry.path());
-                }
-            }
-        } else if (std::filesystem::is_regular_file(path)) {
-            processFile(path);
-        } else {
-            AddLog("[ERROR] Not a valid file/folder.");
-        }
-
-        AddLog("[DONE] Scanned " + std::to_string(filesScanned) + " files.");
-        AddLog("[RESULT] Found " + std::to_string(totalMatches) + " total matches.");
-
-    } catch (const std::regex_error& e) {
-        AddLog("[ERROR] Invalid Regex logic.");
-    } catch (const std::exception& e) {
-        AddLog("[ERROR] System: " + std::string(e.what()));
-    }
-
+            for (const auto& entry : std::filesystem::directory_iterator(path)) if (entry.is_regular_file()) processFile(entry.path());
+        } else if (std::filesystem::is_regular_file(path)) processFile(path);
+        
+        AddLog("[DONE] Scanned " + std::to_string(filesScanned) + " files. Matches: " + std::to_string(totalMatches));
+    } catch (const std::exception& e) { AddLog("[ERROR] " + std::string(e.what())); }
     consoleInput = "";
+}
+
+// HELPER: Get X,Y coords of text index for simple highlighting
+Vector2 GetTextPos(const std::string& text, size_t index, float fontSize) {
+    int line = 0;
+    size_t lastNewLine = 0;
+    for (size_t i = 0; i < index && i < text.length(); i++) {
+        if (text[i] == '\n') {
+            line++;
+            lastNewLine = i + 1;
+        }
+    }
+    std::string currentLinePrefix = text.substr(lastNewLine, index - lastNewLine);
+    float x = MeasureTextEx(mainFont, currentLinePrefix.c_str(), fontSize, 1.0f).x;
+    float y = line * fontSize; 
+    return {x, y};
 }
 
 // ----------------------------------------------------------------------------------
@@ -255,25 +238,19 @@ void ProcessConsoleCommand() {
 int main() {
     const int screenWidth = 1280;
     const int screenHeight = 900;
-    
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE); 
-    InitWindow(screenWidth, screenHeight, "Visual Regex - Console Edition");
+    InitWindow(screenWidth, screenHeight, "Visual Regex - Pro Edition");
 
     mainFont = LoadFontEx("sources/font.ttf", 32, 0, 0); 
     if (mainFont.texture.id == 0) mainFont = GetFontDefault();
 
     SetTargetFPS(60);
     camera.zoom = 1.0f;
-
-    SetExitKey(KEY_NULL); // Disable default ESC behavior
-
     AddNode(NODE_START, 100, 300);
+    
     int editingNodeId = -1;
     float copyFeedbackTimer = 0.0f;
-    
-    // Initial Log
-    AddLog("Visual Regex Console v1.0");
-    AddLog("Type a directory path to scan...");
+    AddLog("Visual Regex Console v1.0 Ready.");
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
@@ -282,47 +259,83 @@ int main() {
 
         Vector2 mouseScreen = GetMousePosition();
         Vector2 mouseWorld = GetScreenToWorld2D(mouseScreen, camera);
-
-        // --- INPUT HANDLING ---
         
-        // Toggle Console (T key) - Only if not editing a node
-        // NOTE: If console is OPEN, we capture input, so we use ESC to close to allow typing 't'
-        if (IsKeyPressed(KEY_T) && !showConsole && editingNodeId == -1) {
-            showConsole = true;
+        // INPUT ROUTING
+        int key = GetCharPressed(); 
+        bool inputConsumed = false;
+
+        // --- BACKSPACE LOGIC HELPER ---
+        auto HandleBackspace = [&](std::string& target) {
+            if (IsKeyPressed(KEY_BACKSPACE)) {
+                if (!target.empty()) target.pop_back();
+                keyRepeatTimer = KEY_REPEAT_DELAY; // Initial delay
+            } else if (IsKeyDown(KEY_BACKSPACE)) {
+                keyRepeatTimer -= dt;
+                if (keyRepeatTimer <= 0) {
+                    if (!target.empty()) target.pop_back();
+                    keyRepeatTimer = KEY_REPEAT_RATE; // Fast repeat
+                }
+            } else {
+                keyRepeatTimer = 0; // Reset
+            }
+        };
+
+        // 1. HELP OVERLAY (Top Priority)
+        if (showHelp) {
+            if (IsKeyPressed(KEY_ESCAPE) || (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && mouseScreen.y > 80)) {
+                showHelp = false;
+            }
+            inputConsumed = true;
         }
 
-        if (showConsole) {
-            // CONSOLE INPUT MODE
+        // 2. CONSOLE OVERLAY (Exclusive Input)
+        else if (showConsole) {
             if (IsKeyPressed(KEY_ESCAPE)) showConsole = false;
-            
             if (IsKeyPressed(KEY_ENTER)) ProcessConsoleCommand();
-
-            // --- Paste from Clipboard (Ctrl+V) ---
             if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_V)) {
-                const char* clipboardText = GetClipboardText();
-                if (clipboardText != nullptr) {
-                    consoleInput += std::string(clipboardText);
-                }
+                const char* clip = GetClipboardText();
+                if (clip) consoleInput += std::string(clip);
             }
-
-            int key = GetCharPressed();
             while (key > 0) {
-                if ((key >= 32) && (key <= 125)) {
-                    consoleInput += (char)key;
-                }
+                if ((key >= 32) && (key <= 125)) consoleInput += (char)key;
                 key = GetCharPressed();
             }
-            if (IsKeyPressed(KEY_BACKSPACE) && !consoleInput.empty()) {
-                consoleInput.pop_back();
+            
+            HandleBackspace(consoleInput); // POINT 1: Continuous Backspace
+            inputConsumed = true; 
+        }
+        // TOGGLE TERMINAL
+        else if (IsKeyPressed(KEY_T) && editingNodeId == -1 && !showConsole && !showPlayground) {
+            showConsole = true;
+            inputConsumed = true;
+        }
+
+        // 3. PLAYGROUND PANEL (Contextual Input)
+        bool mouseOverPlayground = showPlayground && CheckCollisionPointRec(mouseScreen, playgroundRect);
+        
+        if (!inputConsumed && showPlayground && mouseOverPlayground) {
+            if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_V)) {
+                const char* clip = GetClipboardText();
+                if (clip) playgroundText += std::string(clip);
             }
-        } 
-        else if (editingNodeId != -1) {
-            // NODE EDITING MODE
+            while (key > 0) {
+                if ((key >= 32) && (key <= 125)) playgroundText += (char)key;
+                key = GetCharPressed();
+            }
+            
+            HandleBackspace(playgroundText); // POINT 1: Continuous Backspace
+            
+            if (IsKeyPressed(KEY_ENTER)) playgroundText += '\n';
+            
+            inputConsumed = true; 
+        }
+
+        // 4. NODE EDITING (Contextual Input)
+        if (!inputConsumed && editingNodeId != -1) {
             if (IsKeyPressed(KEY_ENTER) || (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !CheckCollisionPointRec(mouseWorld, nodes[0].rect))) { 
                 editingNodeId = -1;
                 for(auto& n : nodes) n.isEditing = false;
             } else {
-                int key = GetCharPressed();
                 while (key > 0) {
                     if ((key >= 32) && (key <= 125)) {
                         for(auto& n : nodes) if (n.id == editingNodeId) {
@@ -332,15 +345,31 @@ int main() {
                     }
                     key = GetCharPressed();
                 }
+                
+                // Manual Backspace handling for Node, since helper uses reference to string, 
+                // we need to access the specific node string.
                 if (IsKeyPressed(KEY_BACKSPACE)) {
-                    for(auto& n : nodes) if (n.id == editingNodeId && n.regexValue.length() > 0) {
+                    for(auto& n : nodes) if (n.id == editingNodeId && !n.regexValue.empty()) {
                         n.regexValue.pop_back();
                         if(n.type == NODE_CUSTOM) n.title = n.regexValue;
                     }
+                    keyRepeatTimer = KEY_REPEAT_DELAY;
+                } else if (IsKeyDown(KEY_BACKSPACE)) {
+                    keyRepeatTimer -= dt;
+                    if (keyRepeatTimer <= 0) {
+                        for(auto& n : nodes) if (n.id == editingNodeId && !n.regexValue.empty()) {
+                            n.regexValue.pop_back();
+                            if(n.type == NODE_CUSTOM) n.title = n.regexValue;
+                        }
+                        keyRepeatTimer = KEY_REPEAT_RATE;
+                    }
                 }
             }
-        } else {
-            // CANVAS NAVIGATION MODE
+            inputConsumed = true;
+        }
+
+        // 5. CANVAS NAVIGATION (Only if no overlay active)
+        if (!inputConsumed && !mouseOverPlayground) {
             float wheel = GetMouseWheelMove();
             if (wheel != 0) {
                 Vector2 mouseWorldBeforeZoom = GetScreenToWorld2D(mouseScreen, camera);
@@ -409,7 +438,6 @@ int main() {
 
         BeginMode2D(camera);
             DrawGrid2D(100, 40.0f);
-
             for (const auto& conn : connections) {
                 Vector2 s, e;
                 for (const auto& n : nodes) {
@@ -423,7 +451,6 @@ int main() {
                 for (const auto& n : nodes) if (n.id == connectionStartNodeId) s = { n.rect.x + n.rect.width, n.rect.y + n.rect.height/2 };
                 DrawLineBezier(s, mouseWorld, 3.0f, COL_WIRE_ACTIVE);
             }
-
             for (const auto& n : nodes) {
                 DrawRectangleRounded(n.rect, 0.2f, 8, n.isEditing ? RED : n.color);
                 DrawRectangleRoundedLines(n.rect, 0.2f, 8, (n.id == selectedNodeId) ? WHITE : BLACK);
@@ -433,27 +460,125 @@ int main() {
             }
         EndMode2D();
 
-        // UI Header
+        // UI HEADERS & PANELS
         int curW = GetScreenWidth(); int curH = GetScreenHeight();
-        DrawRectangle(0, 0, curW, 80, Fade(BLACK, 0.9f));
-        std::string reg = GenerateRegex();
-        DrawTextEx(mainFont, "REGEX:", {20, 30}, 20, 1.0f, LIGHTGRAY);
-        DrawTextEx(mainFont, reg.c_str(), {100, 25}, 30, 1.0f, YELLOW);
         
-        if (GuiButton({(float)curW - 170, 20, 150, 40}, copyFeedbackTimer > 0 ? "COPIED!" : "COPY")) {
-            SetClipboardText(reg.c_str()); copyFeedbackTimer = 2.0f;
+        // Header
+        DrawRectangle(0, 0, curW, 80, Fade(BLACK, 0.9f));
+        std::string regStr = GenerateRegex();
+        DrawTextEx(mainFont, "REGEX:", {20, 30}, 20, 1.0f, LIGHTGRAY);
+        DrawTextEx(mainFont, regStr.c_str(), {100, 25}, 30, 1.0f, YELLOW);
+        
+        // POINT 2: Block Playground opening if Console is active
+        if (!showConsole) {
+            if (GuiButton({(float)curW - 320, 20, 140, 40}, showPlayground ? "HIDE TEST" : "PLAYGROUND")) {
+                showPlayground = !showPlayground;
+            }
+        } else {
+            // Disabled look for button
+            DrawRectangleRec({(float)curW - 320, 20, 140, 40}, Fade(GRAY, 0.5f));
+            DrawTextEx(mainFont, "PLAYGROUND", {(float)curW - 320 + 20, 30}, 18, 1.0f, DARKGRAY);
+        }
+
+        if (GuiButton({(float)curW - 170, 20, 100, 40}, copyFeedbackTimer > 0 ? "COPIED!" : "COPY")) {
+            SetClipboardText(regStr.c_str()); copyFeedbackTimer = 2.0f;
+        }
+
+        // POINT 2: HELP BUTTON
+        if (GuiButton({(float)curW - 60, 20, 40, 40}, "?")) {
+            showHelp = !showHelp;
+        }
+
+        // POINT 1 & 3: PLAYGROUND PANEL
+        if (showPlayground) {
+            float pgWidth = 400;
+            float headerH = 80;
+            float footerH = 180;
+            playgroundRect = { (float)curW - pgWidth, headerH, pgWidth, (float)curH - headerH - footerH };
+            
+            DrawRectangleRec(playgroundRect, Fade(COL_BG, 0.95f));
+            DrawRectangleLinesEx(playgroundRect, 2, BLUE);
+            
+            // Header
+            DrawRectangle(playgroundRect.x, playgroundRect.y, playgroundRect.width, 40, Fade(BLUE, 0.2f));
+            DrawTextEx(mainFont, "REAL-TIME PLAYGROUND", {playgroundRect.x + 20, playgroundRect.y + 10}, 18, 1.0f, BLUE);
+            DrawTextEx(mainFont, (mouseOverPlayground ? "[TYPE HERE]" : ""), {playgroundRect.x + 250, playgroundRect.y + 10}, 14, 1.0f, LIGHTGRAY);
+
+            // Scrollbar Logic
+            float fontSize = 20.0f;
+            Rectangle textArea = { playgroundRect.x + 10, playgroundRect.y + 50, playgroundRect.width - 35, playgroundRect.height - 60 };
+            
+            int lines = 1;
+            for(char c : playgroundText) if(c == '\n') lines++;
+            float totalHeight = lines * fontSize;
+            float maxScroll = std::max(0.0f, totalHeight - textArea.height);
+            
+            if (mouseOverPlayground) {
+                float wheel = GetMouseWheelMove();
+                if (wheel != 0) {
+                    playgroundScrollOffset -= wheel * 30.0f;
+                    if (playgroundScrollOffset < 0) playgroundScrollOffset = 0;
+                    if (playgroundScrollOffset > maxScroll) playgroundScrollOffset = maxScroll;
+                }
+            }
+
+            Rectangle scrollTrack = { textArea.x + textArea.width + 5, textArea.y, 15, textArea.height };
+            DrawRectangleRec(scrollTrack, Fade(BLUE, 0.1f));
+            if (maxScroll > 0) {
+                float viewRatio = textArea.height / totalHeight;
+                float thumbH = std::max(20.0f, scrollTrack.height * viewRatio);
+                float scrollRatio = playgroundScrollOffset / maxScroll;
+                float thumbY = scrollTrack.y + (scrollTrack.height - thumbH) * scrollRatio;
+                Rectangle scrollThumb = { scrollTrack.x, thumbY, scrollTrack.width, thumbH };
+                
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouseScreen, scrollTrack)) isDraggingPlaygroundScroll = true;
+                if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) isDraggingPlaygroundScroll = false;
+                
+                if (isDraggingPlaygroundScroll) {
+                    float relativeY = mouseScreen.y - scrollTrack.y - thumbH/2;
+                    float ratio = relativeY / (scrollTrack.height - thumbH);
+                    playgroundScrollOffset = ratio * maxScroll;
+                    if (playgroundScrollOffset < 0) playgroundScrollOffset = 0;
+                    if (playgroundScrollOffset > maxScroll) playgroundScrollOffset = maxScroll;
+                }
+                DrawRectangleRec(scrollThumb, isDraggingPlaygroundScroll ? BLUE : Fade(BLUE, 0.5f));
+            } else {
+                playgroundScrollOffset = 0;
+            }
+
+            BeginScissorMode((int)textArea.x, (int)textArea.y, (int)textArea.width, (int)textArea.height);
+                if (!regStr.empty()) {
+                    try {
+                        std::regex pattern(regStr);
+                        auto words_begin = std::sregex_iterator(playgroundText.begin(), playgroundText.end(), pattern);
+                        auto words_end = std::sregex_iterator();
+                        for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+                            std::smatch match = *i;
+                            Vector2 pos = GetTextPos(playgroundText, match.position(), fontSize);
+                            pos.x += textArea.x;
+                            pos.y += textArea.y - playgroundScrollOffset;
+                            float matchW = MeasureTextEx(mainFont, match.str().c_str(), fontSize, 1.0f).x;
+                            DrawRectangle(pos.x, pos.y, matchW, fontSize, Fade(GREEN, 0.4f));
+                        }
+                    } catch (...) {}
+                }
+                DrawTextEx(mainFont, playgroundText.c_str(), {textArea.x, textArea.y - playgroundScrollOffset}, fontSize, 1.0f, WHITE);
+                if (mouseOverPlayground && ((int)(cursorBlinkTimer*2)%2==0)) {
+                    Vector2 cursorPos = GetTextPos(playgroundText, playgroundText.length(), fontSize);
+                    DrawRectangle(textArea.x + cursorPos.x + 2, textArea.y + cursorPos.y - playgroundScrollOffset, 2, fontSize, WHITE);
+                }
+            EndScissorMode();
+        } else {
+            playgroundRect = {0,0,0,0}; 
         }
 
         // Bottom UI Panel
-        int panelHeight = 180;
-        DrawRectangle(0, curH - panelHeight, curW, panelHeight, Fade(BLACK, 0.9f));
-        DrawTextEx(mainFont, "Pan: Mid-Click | Zoom: Wheel | R-Click: Connect | Del: Delete | Enter: Edit Node | T: Terminal", {20, (float)curH - panelHeight + 10}, 16, 1.0f, GRAY);
+        DrawRectangle(0, curH - 180, curW, 180, Fade(BLACK, 0.9f));
+        DrawTextEx(mainFont, "Pan: Mid-Click | Zoom: Wheel | R-Click: Connect | Del: Delete | Enter: Edit | T: Terminal", {20, (float)curH - 170}, 16, 1.0f, GRAY);
 
         Vector2 c = GetScreenToWorld2D({ (float)curW/2, (float)curH/2 }, camera);
-        int startX = 20; int startY = curH - panelHeight + 40;
-        int btnW = 140; int btnH = 35; int gapX = 150; int gapY = 45;
+        int startX = 20; int startY = curH - 140; int btnW = 140; int btnH = 35; int gapX = 150; int gapY = 45;
 
-        // Row 1
         int x = startX; int y = startY;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "CUSTOM TEXT")) AddNode(NODE_CUSTOM, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Letters")) AddNode(NODE_TEXT, c.x, c.y); x+=gapX;
@@ -462,7 +587,6 @@ int main() {
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Whitespace")) AddNode(NODE_WHITESPACE, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Any Char")) AddNode(NODE_ANY, c.x, c.y); x+=gapX;
         
-        // Row 2
         x = startX; y += gapY;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Symbol @")) AddNode(NODE_SYMBOL, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Non-Number")) AddNode(NODE_NOT_DIGIT, c.x, c.y); x+=gapX;
@@ -472,7 +596,6 @@ int main() {
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Repeat (1+)")) AddNode(NODE_ONE_OR_MORE, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Make Optional")) AddNode(NODE_OPTIONAL, c.x, c.y); x+=gapX;
 
-        // Row 3
         x = startX; y += gapY;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Start Line")) AddNode(NODE_START, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "End Line")) AddNode(NODE_END, c.x, c.y); x+=gapX;
@@ -481,110 +604,67 @@ int main() {
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Finish Group")) AddNode(NODE_GROUP_END, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "OR (Either)")) AddNode(NODE_OR, c.x, c.y); x+=gapX;
 
-        // DRAW CONSOLE OVERLAY
+        // CONSOLE (Draw Last to be on top of everything if open)
         if (showConsole) {
             float conH = 400;
-            DrawRectangle(0, 0, curW, curH, Fade(BLACK, 0.6f)); // Dim background
-            
+            DrawRectangle(0, 0, curW, curH, Fade(BLACK, 0.6f));
             Rectangle conRect = { (float)curW/2 - 300, 100, 600, conH };
             DrawRectangleRec(conRect, Fade(BLACK, 0.95f));
             DrawRectangleLinesEx(conRect, 2, GREEN);
-
-            // Title
             DrawRectangle(conRect.x, conRect.y, conRect.width, 40, Fade(GREEN, 0.2f));
             DrawTextEx(mainFont, "TERMINAL - DIRECTORY SCANNER", {conRect.x + 20, conRect.y + 10}, 20, 1.0f, GREEN);
-            
-            // Close Button
             if (GuiButton({conRect.x + conRect.width - 40, conRect.y, 40, 40}, "X")) showConsole = false;
 
-            // --- SCROLLBAR LOGIC ---
-            // Calculate content metrics
-            float lineHeight = 25.0f;
-            float contentAreaHeight = conH - 100; // Header (50) + Footer (50)
-            int visibleLines = (int)(contentAreaHeight / lineHeight);
+            // Simple Scrollbar (Reusing logic)
+            float contentAreaHeight = conH - 100;
             int totalLines = (int)consoleLog.size();
+            int visibleLines = (int)(contentAreaHeight / 25.0f);
             int maxScroll = std::max(0, totalLines - visibleLines);
-
-            // Clamp Scroll
             if (consoleScrollIndex < 0) consoleScrollIndex = 0;
             if (consoleScrollIndex > maxScroll) consoleScrollIndex = maxScroll;
-
-            // Mouse Wheel Scrolling
             float wheel = GetMouseWheelMove();
-            if (wheel != 0) {
-                consoleScrollIndex -= (int)wheel;
-                if (consoleScrollIndex < 0) consoleScrollIndex = 0;
-                if (consoleScrollIndex > maxScroll) consoleScrollIndex = maxScroll;
-            }
+            if (wheel != 0) { consoleScrollIndex -= (int)wheel; if (consoleScrollIndex < 0) consoleScrollIndex = 0; if (consoleScrollIndex > maxScroll) consoleScrollIndex = maxScroll; }
 
-            // Scrollbar Geometry
-            Rectangle scrollTrack = { conRect.x + conRect.width - 20, conRect.y + 50, 15, contentAreaHeight };
-            
-            // Handle Scrollbar Dragging
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouseScreen, scrollTrack)) {
-                isDraggingScrollbar = true;
-            }
-            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-                isDraggingScrollbar = false;
-            }
-
-            if (isDraggingScrollbar) {
-                // Map mouse Y relative to track height to scroll index
-                float relativeY = mouseScreen.y - scrollTrack.y;
-                float ratio = relativeY / scrollTrack.height;
-                consoleScrollIndex = (int)(ratio * totalLines);
-                // Re-clamp
-                if (consoleScrollIndex < 0) consoleScrollIndex = 0;
-                if (consoleScrollIndex > maxScroll) consoleScrollIndex = maxScroll;
-            }
-
-            // Draw Scrollbar Track
-            DrawRectangleRec(scrollTrack, Fade(GREEN, 0.1f));
-            
-            // Draw Scrollbar Thumb
-            if (totalLines > 0) {
-                float viewRatio = (float)visibleLines / (float)std::max(visibleLines, totalLines);
-                float thumbHeight = std::max(20.0f, scrollTrack.height * viewRatio);
-                float scrollRatio = (float)consoleScrollIndex / (float)std::max(1, totalLines - visibleLines);
-                // If all lines fit, ratio is 0
-                if (maxScroll == 0) scrollRatio = 0;
-                
-                float thumbY = scrollTrack.y + (scrollTrack.height - thumbHeight) * scrollRatio;
-                Rectangle scrollThumb = { scrollTrack.x, thumbY, scrollTrack.width, thumbHeight };
-                
-                DrawRectangleRec(scrollThumb, isDraggingScrollbar ? GREEN : Fade(GREEN, 0.5f));
-            }
-
-            // --- DRAW LOGS ---
-            // Only draw visible lines based on scroll
             int startLine = consoleScrollIndex;
             int endLine = std::min((int)consoleLog.size(), startLine + visibleLines);
-
             float logY = conRect.y + 50;
             for (int i = startLine; i < endLine; i++) {
-                std::string log = consoleLog[i];
-                Color txtColor = GREEN;
-                if (log.find("[ERROR]") != std::string::npos) txtColor = RED;
-                else if (log.find("[SUCCESS]") != std::string::npos) txtColor = YELLOW;
-                else if (log.find("HIT:") != std::string::npos) txtColor = ORANGE; // Hits in orange
-                else if (log.find(">") != std::string::npos) txtColor = WHITE;
-                
-                DrawTextEx(mainFont, log.c_str(), {conRect.x + 20, logY}, 18, 1.0f, txtColor);
-                logY += lineHeight;
+                Color c = GREEN;
+                if (consoleLog[i].find("[ERROR]") != std::string::npos) c = RED;
+                else if (consoleLog[i].find("HIT:") != std::string::npos) c = ORANGE;
+                DrawTextEx(mainFont, consoleLog[i].c_str(), {conRect.x + 20, logY}, 18, 1.0f, c);
+                logY += 25;
             }
-
-            // Input Line
+            
             float inputY = conRect.y + conH - 50;
             DrawRectangle(conRect.x + 10, inputY, conRect.width - 20, 40, Fade(GREEN, 0.1f));
             DrawTextEx(mainFont, ">", {conRect.x + 20, inputY + 10}, 20, 1.0f, GREEN);
-            
-            std::string cursor = ((int)(cursorBlinkTimer * 2) % 2 == 0) ? "_" : "";
-            // Ensure input text fits? For now just clip
             BeginScissorMode((int)conRect.x + 45, (int)inputY, (int)conRect.width - 60, 40);
-                DrawTextEx(mainFont, (consoleInput + cursor).c_str(), {conRect.x + 45, inputY + 10}, 20, 1.0f, WHITE);
+                DrawTextEx(mainFont, (consoleInput + (((int)(cursorBlinkTimer*2)%2==0)?"_":"")).c_str(), {conRect.x + 45, inputY + 10}, 20, 1.0f, WHITE);
             EndScissorMode();
-            
             DrawTextEx(mainFont, "ESC: Close | ENTER: Scan | Ctrl+V: Paste", {conRect.x + 20, conRect.y + conH + 10}, 16, 1.0f, WHITE);
+        }
+
+        // POINT 2: HELP OVERLAY
+        if (showHelp) {
+            DrawRectangle(0, 0, curW, curH, Fade(BLACK, 0.7f));
+            Rectangle helpRect = { (float)curW/2 - 250, (float)curH/2 - 200, 500, 400 };
+            DrawRectangleRec(helpRect, COL_BG);
+            DrawRectangleLinesEx(helpRect, 2, WHITE);
+            DrawTextEx(mainFont, "HELP & SHORTCUTS", {helpRect.x + 20, helpRect.y + 20}, 24, 1.0f, YELLOW);
+            
+            int ly = helpRect.y + 70;
+            int lh = 30;
+            DrawTextEx(mainFont, "- Left Click: Drag Nodes / Select", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            DrawTextEx(mainFont, "- Right Click: Connect Nodes", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            DrawTextEx(mainFont, "- Middle Click: Pan View", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            DrawTextEx(mainFont, "- Wheel: Zoom In / Out", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            DrawTextEx(mainFont, "- ENTER: Edit Selected Node", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            DrawTextEx(mainFont, "- DEL: Delete Selected Node", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            DrawTextEx(mainFont, "- T: Toggle File Scanner Console", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            DrawTextEx(mainFont, "- Ctrl+V: Paste text", {helpRect.x + 30, (float)ly}, 20, 1.0f, WHITE); ly += lh;
+            
+            DrawTextEx(mainFont, "Press ESC to Close", {helpRect.x + 150, helpRect.y + 360}, 18, 1.0f, GRAY);
         }
 
         EndDrawing();
