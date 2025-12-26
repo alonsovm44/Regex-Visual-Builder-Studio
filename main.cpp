@@ -17,13 +17,32 @@
 // ----------------------------------------------------------------------------------
 
 enum NodeType {
-    NODE_START,
-    NODE_TEXT,      // Represents [a-z]+
-    NODE_DIGIT,     // Represents \d
-    NODE_WHITESPACE,// Represents \s
-    NODE_ANY,       // Represents .
-    NODE_WORD,      // Represents \w
-    NODE_SYMBOL     // Represents @ (or custom)
+    // Anchors
+    NODE_START,         // ^
+    NODE_END,           // $
+
+    // Character Classes
+    NODE_TEXT,          // [a-z]
+    NODE_DIGIT,         // \d
+    NODE_WHITESPACE,    // \s
+    NODE_ANY,           // .
+    NODE_WORD,          // \w
+    NODE_SYMBOL,        // @ (Placeholder)
+
+    // Negated Classes
+    NODE_NOT_DIGIT,     // \D
+    NODE_NOT_WHITESPACE,// \S
+    NODE_NOT_WORD,      // \W
+
+    // Quantifiers
+    NODE_ZERO_OR_MORE,  // *
+    NODE_ONE_OR_MORE,   // +
+    NODE_OPTIONAL,      // ?
+
+    // Structure
+    NODE_GROUP_START,   // (
+    NODE_GROUP_END,     // )
+    NODE_OR             // |
 };
 
 struct Node {
@@ -67,12 +86,17 @@ Font mainFont = { 0 }; // Global font to use instead of default
 // Cyberpunk Style Colors
 const Color COL_BG = { 20, 24, 35, 255 };      // Very dark blue
 const Color COL_GRID = { 40, 45, 60, 255 };    // Blueish gray
-const Color COL_NODE_START = { 255, 100, 100, 255 }; // Soft red
-const Color COL_NODE_TEXT = { 0, 228, 48, 255 };     // Matrix green
-const Color COL_NODE_DIGIT = { 0, 121, 241, 255 };   // Electric blue
-const Color COL_NODE_SPECIAL = { 255, 161, 0, 255 }; // Orange for specials
 const Color COL_WIRE = { 200, 200, 200, 150 };       // Gray wire
 const Color COL_WIRE_ACTIVE = { 255, 255, 0, 255 };  // Yellow wire (creating)
+
+// Node Colors by Category
+const Color COL_CAT_ANCHOR = { 255, 100, 100, 255 }; // Soft red
+const Color COL_CAT_CHAR = { 0, 228, 48, 255 };      // Matrix green
+const Color COL_CAT_DIGIT = { 0, 121, 241, 255 };    // Electric blue
+const Color COL_CAT_SPECIAL = { 255, 161, 0, 255 };  // Orange
+const Color COL_CAT_NEGATED = { 100, 100, 100, 255 };// Dark Gray
+const Color COL_CAT_QUANT = { 255, 255, 0, 255 };    // Yellow
+const Color COL_CAT_STRUCT = { 180, 80, 255, 255 };  // Purple
 
 // ----------------------------------------------------------------------------------
 // Prototypes and Helper Functions
@@ -89,40 +113,99 @@ void AddNode(NodeType type, float x, float y) {
     n.isDragging = false;
 
     switch (type) {
+        // --- ANCHORS ---
         case NODE_START:
-            n.title = "START";
+            n.title = "Start of Line";
             n.regexValue = "^";
-            n.color = COL_NODE_START;
+            n.color = COL_CAT_ANCHOR;
             break;
+        case NODE_END:
+            n.title = "End of Line";
+            n.regexValue = "$";
+            n.color = COL_CAT_ANCHOR;
+            break;
+
+        // --- CLASSES ---
         case NODE_TEXT:
-            n.title = "Text (a-z)";
+            n.title = "Letters (a-z)";
             n.regexValue = "[a-zA-Z]+";
-            n.color = COL_NODE_TEXT;
+            n.color = COL_CAT_CHAR;
             break;
         case NODE_DIGIT:
-            n.title = "Digit (0-9)";
-            n.regexValue = "\\d+";
-            n.color = COL_NODE_DIGIT;
+            n.title = "Number (0-9)";
+            n.regexValue = "\\d";
+            n.color = COL_CAT_DIGIT;
             break;
         case NODE_WHITESPACE:
             n.title = "Whitespace";
             n.regexValue = "\\s";
-            n.color = ORANGE;
+            n.color = COL_CAT_SPECIAL;
             break;
         case NODE_ANY:
-            n.title = "Any Char (.)";
+            n.title = "Anything";
             n.regexValue = ".";
-            n.color = COL_NODE_SPECIAL;
+            n.color = COL_CAT_SPECIAL;
             break;
         case NODE_WORD:
-            n.title = "Word (\\w)";
-            n.regexValue = "\\w+";
-            n.color = COL_NODE_TEXT;
+            n.title = "Word Char";
+            n.regexValue = "\\w";
+            n.color = COL_CAT_CHAR;
             break;
         case NODE_SYMBOL:
-            n.title = "Symbol (@)";
+            n.title = "Specific Symbol";
             n.regexValue = "@";
             n.color = PURPLE;
+            break;
+
+        // --- NEGATED ---
+        case NODE_NOT_DIGIT:
+            n.title = "Not a Number";
+            n.regexValue = "\\D";
+            n.color = COL_CAT_NEGATED;
+            break;
+        case NODE_NOT_WHITESPACE:
+            n.title = "Not Whitespace";
+            n.regexValue = "\\S";
+            n.color = COL_CAT_NEGATED;
+            break;
+        case NODE_NOT_WORD:
+            n.title = "Not Word Char";
+            n.regexValue = "\\W";
+            n.color = COL_CAT_NEGATED;
+            break;
+
+        // --- QUANTIFIERS ---
+        case NODE_ZERO_OR_MORE:
+            n.title = "Repeat (0+)";
+            n.regexValue = "*";
+            n.color = COL_CAT_QUANT;
+            break;
+        case NODE_ONE_OR_MORE:
+            n.title = "Repeat (1+)";
+            n.regexValue = "+";
+            n.color = COL_CAT_QUANT;
+            break;
+        case NODE_OPTIONAL:
+            n.title = "Optional";
+            n.regexValue = "?";
+            n.color = COL_CAT_QUANT;
+            break;
+
+        // --- STRUCTURE ---
+        case NODE_GROUP_START:
+            n.title = "Start Group";
+            n.regexValue = "(";
+            n.color = COL_CAT_STRUCT;
+            break;
+        case NODE_GROUP_END:
+            n.title = "End Group";
+            n.regexValue = ")";
+            n.color = COL_CAT_STRUCT;
+            break;
+        case NODE_OR:
+            n.title = "OR (Either)";
+            n.regexValue = "|";
+            n.color = COL_CAT_STRUCT;
             break;
     }
     nodes.push_back(n);
@@ -133,6 +216,10 @@ std::string GenerateRegex() {
     std::stringstream ss;
     
     // 1. Find the START node
+    // Note: With multiple paths or fragments, this simple traverser might need logic updates.
+    // For now, we look for NODE_START. If not found, we look for the "left-most" node without inputs?
+    // To keep it simple for MVP: We always start search from NODE_START.
+    
     int currentNodeId = -1;
     for (const auto& node : nodes) {
         if (node.type == NODE_START) {
@@ -142,12 +229,36 @@ std::string GenerateRegex() {
         }
     }
 
-    if (currentNodeId == -1) return "Missing START node";
+    // If no start node, maybe start from the first node in list?
+    if (currentNodeId == -1 && !nodes.empty()) {
+        // Fallback: Start from first created node that isn't connected TO anything?
+        // Simplified: Just take the first node in the vector for now if no explicit START anchor.
+        // Or return empty. Let's return a hint.
+        if (nodes.empty()) return "";
+        // Let's try to find a root (no incoming connections)
+         for (const auto& n : nodes) {
+             bool hasInput = false;
+             for (const auto& c : connections) {
+                 if (c.toNodeId == n.id) hasInput = true;
+             }
+             if (!hasInput) {
+                 currentNodeId = n.id;
+                 ss << n.regexValue;
+                 break;
+             }
+         }
+    }
+
+    if (currentNodeId == -1) return "Add nodes...";
 
     // 2. Traverse the chain (simplified: assumes 1-to-1 linearity)
+    // We loop to find the 'next' connection.
+    int safetyCounter = 0;
     bool foundNext = true;
-    while (foundNext) {
+    while (foundNext && safetyCounter < 1000) {
         foundNext = false;
+        safetyCounter++;
+        
         for (const auto& conn : connections) {
             if (conn.fromNodeId == currentNodeId) {
                 // Found the next node
@@ -202,23 +313,18 @@ void DrawTextCustom(const char* text, float x, float y, float fontSize, Color co
 int main() {
     // Initialization
     const int screenWidth = 1200;
-    const int screenHeight = 800;
+    const int screenHeight = 900; // Increased height for more UI
     
     // 3. Make window resizable
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE); 
     InitWindow(screenWidth, screenHeight, "Visual Regex Builder - Raylib C++ Prototype");
 
     // FONT LOADING
-    // 1. Try to load custom font from sources/font.ttf
-    // We load it with size 32 (large enough for scaling)
-    mainFont = LoadFontEx("sources/font.ttf", 32, 0, 0); // Load all chars
-    
-    // Fallback if failed
+    mainFont = LoadFontEx("sources/font.ttf", 32, 0, 0); 
     if (mainFont.texture.id == 0) {
         std::cout << "WARNING: Could not load sources/font.ttf, using default." << std::endl;
         mainFont = GetFontDefault();
     } else {
-        // Set texture filter for better scaling
         SetTextureFilter(mainFont.texture, TEXTURE_FILTER_BILINEAR); 
     }
 
@@ -233,25 +339,17 @@ int main() {
     // Add default start node
     AddNode(NODE_START, 100, 300);
     
-    // Feedback timer for "Copied!" message
     float copyFeedbackTimer = 0.0f;
 
     // Main Loop
     while (!WindowShouldClose()) {
-        // ------------------------------------------------------------------------------
-        // 1. UPDATE (Logic)
-        // ------------------------------------------------------------------------------
-        
         float dt = GetFrameTime();
         if (copyFeedbackTimer > 0) copyFeedbackTimer -= dt;
 
-        // IMPORTANT: Get mouse position in World Space (relative to camera)
         Vector2 mouseScreen = GetMousePosition();
         Vector2 mouseWorld = GetScreenToWorld2D(mouseScreen, camera);
 
-        // --- ZOOM & PAN CONTROLS ---
-        
-        // Zoom with Mouse Wheel
+        // --- CONTROLS ---
         float wheel = GetMouseWheelMove();
         if (wheel != 0) {
             Vector2 mouseWorldBeforeZoom = GetScreenToWorld2D(mouseScreen, camera);
@@ -263,7 +361,6 @@ int main() {
             camera.target.y += (mouseWorldBeforeZoom.y - mouseWorldAfterZoom.y);
         }
 
-        // Pan with Middle Mouse or SPACE + Left Click
         if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE) || (IsKeyDown(KEY_SPACE) && IsMouseButtonDown(MOUSE_LEFT_BUTTON))) {
             Vector2 delta = GetMouseDelta();
             delta.x = delta.x * (-1.0f / camera.zoom);
@@ -272,24 +369,30 @@ int main() {
             camera.target.y += delta.y;
         }
 
-        // --- INTERACTION LOGIC (Using mouseWorld) ---
-
-        // Drag Nodes
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !IsKeyDown(KEY_SPACE)) { // Prevent conflict with Pan
+        // --- INTERACTION ---
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !IsKeyDown(KEY_SPACE)) {
+            // Only interact if NOT clicking on UI (simple check: mouse Y < height - 200?)
+            // For now, we trust the Z-order drawing or assume simple intersection check.
+            
             bool clickedNode = false;
-            // Iterate backwards to select the one drawn on top (last)
             for (int i = nodes.size() - 1; i >= 0; i--) {
                 if (CheckCollisionPointRec(mouseWorld, nodes[i].rect)) {
                     selectedNodeId = nodes[i].id;
                     nodes[i].isDragging = true;
-                    // Store offset relative to node origin
                     mouseOffset.x = mouseWorld.x - nodes[i].rect.x;
                     mouseOffset.y = mouseWorld.y - nodes[i].rect.y;
                     clickedNode = true;
                     break; 
                 }
             }
-            if (!clickedNode) selectedNodeId = -1;
+            if (!clickedNode) {
+                // Check if clicking background to deselect?
+                // But buttons consume clicks too.
+                // Simple hack: if click is in UI area, don't deselect? 
+                // Let's just deselect if not node.
+                 if (mouseScreen.y < GetScreenHeight() - 180 && mouseScreen.y > 80)
+                    selectedNodeId = -1;
+            }
         }
 
         if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
@@ -305,7 +408,7 @@ int main() {
             }
         }
 
-        // Connection Logic (Right Click)
+        // Connect
         if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
             for (const auto& node : nodes) {
                 if (CheckCollisionPointRec(mouseWorld, node.rect)) {
@@ -318,11 +421,8 @@ int main() {
 
         if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON) && isCreatingConnection) {
             isCreatingConnection = false;
-            // Check if dropped over another node (using World coordinates)
             for (const auto& node : nodes) {
                 if (CheckCollisionPointRec(mouseWorld, node.rect) && node.id != connectionStartNodeId) {
-                    // Create connection
-                    // First remove existing connections from source (enforce 1 output per node)
                     for (size_t k = 0; k < connections.size(); ) {
                         if (connections[k].fromNodeId == connectionStartNodeId) {
                             connections.erase(connections.begin() + k);
@@ -337,25 +437,17 @@ int main() {
             connectionStartNodeId = -1;
         }
 
-        // 2. Delete connections or nodes (Delete Key)
+        // Delete
         if (IsKeyPressed(KEY_DELETE) && selectedNodeId != -1) {
-            // First remove connections involving this node
             for (int i = connections.size() - 1; i >= 0; i--) {
                 if (connections[i].fromNodeId == selectedNodeId || connections[i].toNodeId == selectedNodeId) {
                     connections.erase(connections.begin() + i);
                 }
             }
-            
-            // Then remove the node itself
             for (int i = nodes.size() - 1; i >= 0; i--) {
                 if (nodes[i].id == selectedNodeId) {
-                    // Don't allow deleting the START node if we want to enforce structure (optional logic)
-                    // But for now, let's allow it but warn or check logic elsewhere.
-                    // Actually, let's PROTECT the START node to avoid breaking the graph logic
-                    if (nodes[i].type != NODE_START) {
-                        nodes.erase(nodes.begin() + i);
-                        selectedNodeId = -1;
-                    }
+                     nodes.erase(nodes.begin() + i);
+                     selectedNodeId = -1;
                     break;
                 }
             }
@@ -367,27 +459,20 @@ int main() {
         BeginDrawing();
         ClearBackground(COL_BG);
 
-        // --- WORLD SPACE DRAWING (Inside Camera) ---
         BeginMode2D(camera);
-
-            // Draw Infinite Grid
             DrawGrid2D(100, 40.0f);
 
             // Draw Connections
             for (const auto& conn : connections) {
                 Vector2 start = {0,0}, end = {0,0};
-                // Find positions
                 for (const auto& n : nodes) {
                     if (n.id == conn.fromNodeId) start = { n.rect.x + n.rect.width, n.rect.y + n.rect.height/2 };
                     if (n.id == conn.toNodeId) end = { n.rect.x, n.rect.y + n.rect.height/2 };
                 }
-                
-                // Draw Bezier curve for wire
                 float thickness = 3.0f * (1.0f/camera.zoom > 1.0f ? 1.0f : 1.0f/camera.zoom);
                 DrawLineBezier(start, end, thickness, COL_WIRE); 
             }
 
-            // Draw temp wire (while dragging right click)
             if (isCreatingConnection) {
                 Vector2 start = {0,0};
                 for (const auto& n : nodes) {
@@ -396,10 +481,7 @@ int main() {
                         break;
                     }
                 }
-                // Draw to World Mouse Position
                 DrawLineBezier(start, mouseWorld, 3.0f, COL_WIRE_ACTIVE);
-                
-                // Highlight target node if hovering
                 for (const auto& node : nodes) {
                     if (CheckCollisionPointRec(mouseWorld, node.rect) && node.id != connectionStartNodeId) {
                          DrawRectangleLinesEx(node.rect, 2.0f, YELLOW);
@@ -409,111 +491,111 @@ int main() {
 
             // Draw Nodes
             for (const auto& node : nodes) {
-                // Shadow
                 DrawRectangleRounded({node.rect.x + 4, node.rect.y + 4, node.rect.width, node.rect.height}, 0.3f, 6, Fade(BLACK, 0.5f));
-                // Body
                 DrawRectangleRounded(node.rect, 0.3f, 6, node.color);
-                // Border (bright if selected)
+                
                 if (node.id == selectedNodeId) 
                     DrawRectangleRoundedLines(node.rect, 0.3f, 6, WHITE);
                 else 
                     DrawRectangleRoundedLines(node.rect, 0.3f, 6, Fade(BLACK, 0.5f));
 
-                // Node Text (Using Custom Font)
-                DrawTextCustom(node.title.c_str(), node.rect.x + 10, node.rect.y + 20, 20, BLACK); // Increased size to 20
+                DrawTextCustom(node.title.c_str(), node.rect.x + 10, node.rect.y + 20, 20, BLACK);
                 
-                // Visual connectors (input/output circles)
-                if (node.type != NODE_START) // Start has no input
-                    DrawCircle((int)node.rect.x, (int)node.rect.y + (int)node.rect.height/2, 5, WHITE);
-                
+                // Inputs/Outputs
+                DrawCircle((int)node.rect.x, (int)node.rect.y + (int)node.rect.height/2, 5, WHITE);
                 DrawCircle((int)node.rect.x + (int)node.rect.width, (int)node.rect.y + (int)node.rect.height/2, 5, WHITE);
             }
-
         EndMode2D();
-        // --- END WORLD SPACE ---
 
-        // --- UI DRAWING (Screen Space - Static) ---
-        // Use GetScreenWidth/Height for dynamic resizing
-        int currentScreenWidth = GetScreenWidth();
-        int currentScreenHeight = GetScreenHeight();
+        // --- UI ---
+        int w = GetScreenWidth();
+        int h = GetScreenHeight();
         
-        // UI: Top Panel (Generation)
-        DrawRectangle(0, 0, currentScreenWidth, 80, Fade(BLACK, 0.8f));
+        // TOP PANEL
+        DrawRectangle(0, 0, w, 80, Fade(BLACK, 0.85f));
         std::string regexResult = GenerateRegex();
-        DrawTextCustom("GENERATED REGEX:", 20, 30, 20, WHITE);
-        
-        // Output Value
-        DrawTextCustom(regexResult.c_str(), 240, 30, 30, YELLOW);
+        DrawTextCustom("REGEX:", 20, 30, 20, LIGHTGRAY);
+        DrawTextCustom(regexResult.c_str(), 100, 30, 30, YELLOW);
 
-        // Copy Button
-        Rectangle copyBtnRec = { (float)currentScreenWidth - 180, 20, 160, 40 };
-        const char* btnText = (copyFeedbackTimer > 0) ? "COPIED!" : "COPY CLIPBOARD";
+        Rectangle copyBtnRec = { (float)w - 180, 20, 160, 40 };
+        const char* btnText = (copyFeedbackTimer > 0) ? "COPIED!" : "COPY";
         if (GuiButton(copyBtnRec, btnText)) {
             SetClipboardText(regexResult.c_str());
-            copyFeedbackTimer = 2.0f; // Show "Copied" for 2 seconds
+            copyFeedbackTimer = 2.0f; 
         }
 
-        // UI: Bottom Panel (Tools)
-        DrawRectangle(0, currentScreenHeight - 140, currentScreenWidth, 140, Fade(BLACK, 0.8f));
-        DrawTextCustom("Pan: Middle-Click | Zoom: Wheel | R-Click: Connect | Del: Delete", 20, currentScreenHeight - 125, 20, LIGHTGRAY);
+        // BOTTOM PANEL (Expanded for more buttons)
+        int panelHeight = 180;
+        DrawRectangle(0, h - panelHeight, w, panelHeight, Fade(BLACK, 0.9f));
+        DrawTextCustom("Pan: Mid-Click | Zoom: Wheel | R-Click: Connect | Del: Delete", 20, h - panelHeight + 10, 16, GRAY);
 
-        // Buttons need to use World Coordinates for spawning nodes centered on screen
-        Vector2 centerScreenWorld = GetScreenToWorld2D({ (float)currentScreenWidth/2, (float)currentScreenHeight/2 }, camera);
+        Vector2 c = GetScreenToWorld2D({ (float)w/2, (float)h/2 }, camera);
         
-        // Row 1
-        int btnX = 20;
-        int btnY = currentScreenHeight - 90;
-        int btnW = 150;
-        int btnH = 40;
-        int gap = 170;
+        // BUTTON LAYOUT
+        // Grid configuration
+        int startX = 20;
+        int startY = h - panelHeight + 40;
+        int btnW = 140;
+        int btnH = 35;
+        int gapX = 150;
+        int gapY = 45;
+
+        // Row 1: Basic Classes
+        int x = startX; int y = startY;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Letters")) AddNode(NODE_TEXT, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Numbers")) AddNode(NODE_DIGIT, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Word Chars")) AddNode(NODE_WORD, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Whitespace")) AddNode(NODE_WHITESPACE, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Any Char")) AddNode(NODE_ANY, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Exact Symbol")) AddNode(NODE_SYMBOL, c.x, c.y); x+=gapX;
         
-        if (GuiButton({(float)btnX, (float)btnY, (float)btnW, (float)btnH}, "+ TEXT (a-z)")) AddNode(NODE_TEXT, centerScreenWorld.x, centerScreenWorld.y);
-        btnX += gap;
-        if (GuiButton({(float)btnX, (float)btnY, (float)btnW, (float)btnH}, "+ DIGIT (0-9)")) AddNode(NODE_DIGIT, centerScreenWorld.x, centerScreenWorld.y);
-        btnX += gap;
-        if (GuiButton({(float)btnX, (float)btnY, (float)btnW, (float)btnH}, "+ WORD (\\w)")) AddNode(NODE_WORD, centerScreenWorld.x, centerScreenWorld.y);
-        
-        // Row 2
-        btnX = 20;
-        btnY += 50;
-        if (GuiButton({(float)btnX, (float)btnY, (float)btnW, (float)btnH}, "+ SPACE")) AddNode(NODE_WHITESPACE, centerScreenWorld.x, centerScreenWorld.y);
-        btnX += gap;
-        if (GuiButton({(float)btnX, (float)btnY, (float)btnW, (float)btnH}, "+ ANY (.)")) AddNode(NODE_ANY, centerScreenWorld.x, centerScreenWorld.y);
-        btnX += gap;
-        if (GuiButton({(float)btnX, (float)btnY, (float)btnW, (float)btnH}, "+ SYMBOL (@)")) AddNode(NODE_SYMBOL, centerScreenWorld.x, centerScreenWorld.y);
+        // Row 2: Negated & Quantifiers
+        x = startX; y += gapY;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Non-Number")) AddNode(NODE_NOT_DIGIT, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Non-Word Char")) AddNode(NODE_NOT_WORD, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Non-Whitespace")) AddNode(NODE_NOT_WHITESPACE, c.x, c.y); x+=gapX;
+        // Separator
+        x += 20; 
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Repeat (0+)")) AddNode(NODE_ZERO_OR_MORE, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Repeat (1+)")) AddNode(NODE_ONE_OR_MORE, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Make Optional")) AddNode(NODE_OPTIONAL, c.x, c.y); x+=gapX;
+
+        // Row 3: Structure & Anchors
+        x = startX; y += gapY;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Start of Line")) AddNode(NODE_START, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "End of Line")) AddNode(NODE_END, c.x, c.y); x+=gapX;
+        x += 20;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Begin Group")) AddNode(NODE_GROUP_START, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Finish Group")) AddNode(NODE_GROUP_END, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "OR (Either)")) AddNode(NODE_OR, c.x, c.y); x+=gapX;
 
         EndDrawing();
     }
 
-    // Unload font if it was loaded externally
-    if (mainFont.texture.id != GetFontDefault().texture.id) {
-         UnloadFont(mainFont); 
-    }
-
+    if (mainFont.texture.id != GetFontDefault().texture.id) UnloadFont(mainFont); 
     CloseWindow();
     return 0;
 }
 
 // ----------------------------------------------------------------------------------
-// Minimal Button Implementation
+// UI Implementation
 // ----------------------------------------------------------------------------------
 bool GuiButton(Rectangle bounds, const char* text) {
-    Vector2 mousePoint = GetMousePosition(); // UI is in Screen Space
+    Vector2 mousePoint = GetMousePosition();
     bool isPressed = false;
-    Color color = GRAY;
+    Color color = { 60, 60, 60, 255 }; // Dark grey base
 
     if (CheckCollisionPointRec(mousePoint, bounds)) {
-        color = LIGHTGRAY;
-        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) color = DARKGRAY;
+        color = { 80, 80, 80, 255 };
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) color = { 40, 40, 40, 255 };
         if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) isPressed = true;
     }
 
     DrawRectangleRec(bounds, color);
     DrawRectangleLinesEx(bounds, 1, BLACK);
     
-    // Center Text using custom font
-    Vector2 textSize = MeasureTextEx(mainFont, text, 20, 1.0f);
-    DrawTextEx(mainFont, text, {bounds.x + bounds.width/2 - textSize.x/2, bounds.y + bounds.height/2 - textSize.y/2}, 20, 1.0f, BLACK);
+    Vector2 textSize = MeasureTextEx(mainFont, text, 18, 1.0f);
+    DrawTextEx(mainFont, text, {bounds.x + bounds.width/2 - textSize.x/2, bounds.y + bounds.height/2 - textSize.y/2}, 18, 1.0f, WHITE);
 
     return isPressed;
 }
