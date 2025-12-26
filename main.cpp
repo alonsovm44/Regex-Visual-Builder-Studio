@@ -1,8 +1,8 @@
 /**
- * VISUAL REGEX BUILDER (MVP Prototype)
+ * VISUAL REGEX BUILDER (Console Edition)
  * Language: C++
  * Library: Raylib
- * Description: A simple node editor to visually build Regular Expressions.
+ * Description: A node editor with a drop-down console to input directories.
  */
 
 #include "raylib.h"
@@ -11,38 +11,22 @@
 #include <iostream>
 #include <sstream>
 #include <cmath>
+#include <algorithm>
+#include <regex> 
+#include <fstream>      // Necesario para leer archivos
+#include <filesystem>   // Necesario para recorrer directorios (C++17)
 
 // ----------------------------------------------------------------------------------
 // Data Structures
 // ----------------------------------------------------------------------------------
 
 enum NodeType {
-    // Anchors
-    NODE_START,         // ^
-    NODE_END,           // $
-
-    // Character Classes
-    NODE_TEXT,          // [a-z]
-    NODE_DIGIT,         // \d
-    NODE_WHITESPACE,    // \s
-    NODE_ANY,           // .
-    NODE_WORD,          // \w
-    NODE_SYMBOL,        // @ (Placeholder)
-
-    // Negated Classes
-    NODE_NOT_DIGIT,     // \D
-    NODE_NOT_WHITESPACE,// \S
-    NODE_NOT_WORD,      // \W
-
-    // Quantifiers
-    NODE_ZERO_OR_MORE,  // *
-    NODE_ONE_OR_MORE,   // +
-    NODE_OPTIONAL,      // ?
-
-    // Structure
-    NODE_GROUP_START,   // (
-    NODE_GROUP_END,     // )
-    NODE_OR             // |
+    NODE_START, NODE_END,
+    NODE_TEXT, NODE_DIGIT, NODE_WHITESPACE,
+    NODE_ANY, NODE_WORD, NODE_SYMBOL, NODE_CUSTOM,
+    NODE_NOT_DIGIT, NODE_NOT_WHITESPACE, NODE_NOT_WORD,
+    NODE_ZERO_OR_MORE, NODE_ONE_OR_MORE, NODE_OPTIONAL,
+    NODE_GROUP_START, NODE_GROUP_END, NODE_OR
 };
 
 struct Node {
@@ -50,13 +34,10 @@ struct Node {
     Rectangle rect;
     NodeType type;
     std::string title;
-    std::string regexValue; // The regex code this node contributes
+    std::string regexValue;
     Color color;
     bool isDragging;
-    
-    // Connection points (visual)
-    Vector2 inputPos;
-    Vector2 outputPos;
+    bool isEditing;
 };
 
 struct Connection {
@@ -70,240 +51,201 @@ struct Connection {
 std::vector<Node> nodes;
 std::vector<Connection> connections;
 int nextNodeId = 0;
-int selectedNodeId = -1; // -1 means none
+int selectedNodeId = -1;
 Vector2 mouseOffset = { 0, 0 };
-
-// Variables for creating connections
 bool isCreatingConnection = false;
 int connectionStartNodeId = -1;
-
-// Camera System
 Camera2D camera = { 0 };
+Font mainFont = { 0 };
 
-// Font System
-Font mainFont = { 0 }; // Global font to use instead of default
+// CONSOLE SYSTEM
+bool showConsole = false;
+std::string consoleInput = "";
+std::vector<std::string> consoleLog;
+float cursorBlinkTimer = 0.0f;
+int consoleScrollIndex = 0;     // Indice de la línea superior visible
+bool isDraggingScrollbar = false; // Estado del arrastre de la barra
 
-// Cyberpunk Style Colors
-const Color COL_BG = { 20, 24, 35, 255 };      // Very dark blue
-const Color COL_GRID = { 40, 45, 60, 255 };    // Blueish gray
-const Color COL_WIRE = { 200, 200, 200, 150 };       // Gray wire
-const Color COL_WIRE_ACTIVE = { 255, 255, 0, 255 };  // Yellow wire (creating)
+// Cyberpunk Palette
+const Color COL_BG = { 20, 24, 35, 255 };      
+const Color COL_GRID = { 40, 45, 60, 255 };    
+const Color COL_WIRE = { 200, 200, 200, 150 };       
+const Color COL_WIRE_ACTIVE = { 255, 255, 0, 255 };  
 
-// Node Colors by Category
-const Color COL_CAT_ANCHOR = { 255, 100, 100, 255 }; // Soft red
-const Color COL_CAT_CHAR = { 0, 228, 48, 255 };      // Matrix green
-const Color COL_CAT_DIGIT = { 0, 121, 241, 255 };    // Electric blue
-const Color COL_CAT_SPECIAL = { 255, 161, 0, 255 };  // Orange
-const Color COL_CAT_NEGATED = { 100, 100, 100, 255 };// Dark Gray
-const Color COL_CAT_QUANT = { 255, 255, 0, 255 };    // Yellow
-const Color COL_CAT_STRUCT = { 180, 80, 255, 255 };  // Purple
+// Node Colors
+const Color COL_CAT_ANCHOR = { 255, 100, 100, 255 }; 
+const Color COL_CAT_CHAR = { 0, 228, 48, 255 };      
+const Color COL_CAT_DIGIT = { 0, 121, 241, 255 };    
+const Color COL_CAT_SPECIAL = { 255, 161, 0, 255 };  
+const Color COL_CAT_NEGATED = { 100, 100, 100, 255 };
+const Color COL_CAT_QUANT = { 255, 255, 0, 255 };    
+const Color COL_CAT_STRUCT = { 180, 80, 255, 255 };  
+const Color COL_CAT_CUSTOM = { 255, 0, 255, 255 };   
 
 // ----------------------------------------------------------------------------------
-// Prototypes and Helper Functions
+// Core Logic
 // ----------------------------------------------------------------------------------
 
-// Prototype needed for main() to recognize the function
 bool GuiButton(Rectangle bounds, const char* text);
 
 void AddNode(NodeType type, float x, float y) {
     Node n;
     n.id = nextNodeId++;
-    n.rect = { x, y, 140, 60 };
+    n.rect = { x, y, 160, 60 };
     n.type = type;
     n.isDragging = false;
+    n.isEditing = false;
 
     switch (type) {
-        // --- ANCHORS ---
-        case NODE_START:
-            n.title = "Start of Line";
-            n.regexValue = "^";
-            n.color = COL_CAT_ANCHOR;
-            break;
-        case NODE_END:
-            n.title = "End of Line";
-            n.regexValue = "$";
-            n.color = COL_CAT_ANCHOR;
-            break;
-
-        // --- CLASSES ---
-        case NODE_TEXT:
-            n.title = "Letters (a-z)";
-            n.regexValue = "[a-zA-Z]+";
-            n.color = COL_CAT_CHAR;
-            break;
-        case NODE_DIGIT:
-            n.title = "Number (0-9)";
-            n.regexValue = "\\d";
-            n.color = COL_CAT_DIGIT;
-            break;
-        case NODE_WHITESPACE:
-            n.title = "Whitespace";
-            n.regexValue = "\\s";
-            n.color = COL_CAT_SPECIAL;
-            break;
-        case NODE_ANY:
-            n.title = "Anything";
-            n.regexValue = ".";
-            n.color = COL_CAT_SPECIAL;
-            break;
-        case NODE_WORD:
-            n.title = "Word Char";
-            n.regexValue = "\\w";
-            n.color = COL_CAT_CHAR;
-            break;
-        case NODE_SYMBOL:
-            n.title = "Specific Symbol";
-            n.regexValue = "@";
-            n.color = PURPLE;
-            break;
-
-        // --- NEGATED ---
-        case NODE_NOT_DIGIT:
-            n.title = "Not a Number";
-            n.regexValue = "\\D";
-            n.color = COL_CAT_NEGATED;
-            break;
-        case NODE_NOT_WHITESPACE:
-            n.title = "Not Whitespace";
-            n.regexValue = "\\S";
-            n.color = COL_CAT_NEGATED;
-            break;
-        case NODE_NOT_WORD:
-            n.title = "Not Word Char";
-            n.regexValue = "\\W";
-            n.color = COL_CAT_NEGATED;
-            break;
-
-        // --- QUANTIFIERS ---
-        case NODE_ZERO_OR_MORE:
-            n.title = "Repeat (0+)";
-            n.regexValue = "*";
-            n.color = COL_CAT_QUANT;
-            break;
-        case NODE_ONE_OR_MORE:
-            n.title = "Repeat (1+)";
-            n.regexValue = "+";
-            n.color = COL_CAT_QUANT;
-            break;
-        case NODE_OPTIONAL:
-            n.title = "Optional";
-            n.regexValue = "?";
-            n.color = COL_CAT_QUANT;
-            break;
-
-        // --- STRUCTURE ---
-        case NODE_GROUP_START:
-            n.title = "Start Group";
-            n.regexValue = "(";
-            n.color = COL_CAT_STRUCT;
-            break;
-        case NODE_GROUP_END:
-            n.title = "End Group";
-            n.regexValue = ")";
-            n.color = COL_CAT_STRUCT;
-            break;
-        case NODE_OR:
-            n.title = "OR (Either)";
-            n.regexValue = "|";
-            n.color = COL_CAT_STRUCT;
-            break;
+        case NODE_CUSTOM: n.title = "Custom Text"; n.regexValue = "abc"; n.color = COL_CAT_CUSTOM; break;
+        case NODE_START: n.title = "Start of Line"; n.regexValue = "^"; n.color = COL_CAT_ANCHOR; break;
+        case NODE_END: n.title = "End of Line"; n.regexValue = "$"; n.color = COL_CAT_ANCHOR; break;
+        case NODE_TEXT: n.title = "Letters"; n.regexValue = "[a-zA-Z]+"; n.color = COL_CAT_CHAR; break;
+        case NODE_DIGIT: n.title = "Numbers"; n.regexValue = "\\d"; n.color = COL_CAT_DIGIT; break;
+        case NODE_WHITESPACE: n.title = "Whitespace"; n.regexValue = "\\s"; n.color = COL_CAT_SPECIAL; break;
+        case NODE_ANY: n.title = "Any Char"; n.regexValue = "."; n.color = COL_CAT_SPECIAL; break;
+        case NODE_WORD: n.title = "Word Chars"; n.regexValue = "\\w"; n.color = COL_CAT_CHAR; break;
+        case NODE_SYMBOL: n.title = "Symbol @"; n.regexValue = "@"; n.color = PURPLE; break;
+        case NODE_NOT_DIGIT: n.title = "Non-Number"; n.regexValue = "\\D"; n.color = COL_CAT_NEGATED; break;
+        case NODE_NOT_WHITESPACE: n.title = "Non-Space"; n.regexValue = "\\S"; n.color = COL_CAT_NEGATED; break;
+        case NODE_NOT_WORD: n.title = "Non-Word"; n.regexValue = "\\W"; n.color = COL_CAT_NEGATED; break;
+        case NODE_ZERO_OR_MORE: n.title = "Repeat (0+)"; n.regexValue = "*"; n.color = COL_CAT_QUANT; break;
+        case NODE_ONE_OR_MORE: n.title = "Repeat (1+)"; n.regexValue = "+"; n.color = COL_CAT_QUANT; break;
+        case NODE_OPTIONAL: n.title = "Optional"; n.regexValue = "?"; n.color = COL_CAT_QUANT; break;
+        case NODE_GROUP_START: n.title = "Start Group"; n.regexValue = "("; n.color = COL_CAT_STRUCT; break;
+        case NODE_GROUP_END: n.title = "End Group"; n.regexValue = ")"; n.color = COL_CAT_STRUCT; break;
+        case NODE_OR: n.title = "OR (Either)"; n.regexValue = "|"; n.color = COL_CAT_STRUCT; break;
     }
     nodes.push_back(n);
 }
 
-// Generates the Regex string by traversing connections
 std::string GenerateRegex() {
     std::stringstream ss;
-    
-    // 1. Find the START node
-    // Note: With multiple paths or fragments, this simple traverser might need logic updates.
-    // For now, we look for NODE_START. If not found, we look for the "left-most" node without inputs?
-    // To keep it simple for MVP: We always start search from NODE_START.
-    
     int currentNodeId = -1;
     for (const auto& node : nodes) {
-        if (node.type == NODE_START) {
-            currentNodeId = node.id;
-            ss << node.regexValue;
-            break;
-        }
+        if (node.type == NODE_START) { currentNodeId = node.id; ss << node.regexValue; break; }
     }
-
-    // If no start node, maybe start from the first node in list?
     if (currentNodeId == -1 && !nodes.empty()) {
-        // Fallback: Start from first created node that isn't connected TO anything?
-        // Simplified: Just take the first node in the vector for now if no explicit START anchor.
-        // Or return empty. Let's return a hint.
-        if (nodes.empty()) return "";
-        // Let's try to find a root (no incoming connections)
          for (const auto& n : nodes) {
              bool hasInput = false;
-             for (const auto& c : connections) {
-                 if (c.toNodeId == n.id) hasInput = true;
-             }
-             if (!hasInput) {
-                 currentNodeId = n.id;
-                 ss << n.regexValue;
-                 break;
-             }
+             for (const auto& c : connections) { if (c.toNodeId == n.id) hasInput = true; }
+             if (!hasInput) { currentNodeId = n.id; ss << n.regexValue; break; }
          }
     }
+    if (currentNodeId == -1) return "";
 
-    if (currentNodeId == -1) return "Add nodes...";
-
-    // 2. Traverse the chain (simplified: assumes 1-to-1 linearity)
-    // We loop to find the 'next' connection.
-    int safetyCounter = 0;
+    int safety = 0;
     bool foundNext = true;
-    while (foundNext && safetyCounter < 1000) {
-        foundNext = false;
-        safetyCounter++;
-        
+    while (foundNext && safety < 100) {
+        foundNext = false; safety++;
         for (const auto& conn : connections) {
             if (conn.fromNodeId == currentNodeId) {
-                // Found the next node
                 currentNodeId = conn.toNodeId;
-                
-                // Find the node object to get its value
-                for (const auto& n : nodes) {
-                    if (n.id == currentNodeId) {
-                        ss << n.regexValue;
-                        break;
-                    }
-                }
-                foundNext = true;
-                break; // Only follow one path in this prototype
+                for (const auto& n : nodes) { if (n.id == currentNodeId) { ss << n.regexValue; break; } }
+                foundNext = true; break; 
             }
         }
     }
-
     return ss.str();
 }
 
-// Helper to draw grid based on camera view
 void DrawGrid2D(int slices, float spacing) {
-    // Calculate visible area to draw grid only where needed
     Vector2 topLeft = GetScreenToWorld2D({0, 0}, camera);
     Vector2 bottomRight = GetScreenToWorld2D({(float)GetScreenWidth(), (float)GetScreenHeight()}, camera);
     
-    // Snap to grid
     float startX = floor(topLeft.x / spacing) * spacing;
     float startY = floor(topLeft.y / spacing) * spacing;
     
-    // Draw vertical lines
     for (float x = startX; x < bottomRight.x + spacing; x += spacing) {
         DrawLineV({x, topLeft.y}, {x, bottomRight.y}, COL_GRID);
     }
-    
-    // Draw horizontal lines
     for (float y = startY; y < bottomRight.y + spacing; y += spacing) {
         DrawLineV({topLeft.x, y}, {bottomRight.x, y}, COL_GRID);
     }
 }
 
-// Wrapper to draw text using our custom font
-void DrawTextCustom(const char* text, float x, float y, float fontSize, Color color) {
-    DrawTextEx(mainFont, text, {x, y}, fontSize, 1.0f, color);
+// CONSOLE LOGIC
+void AddLog(std::string msg) {
+    consoleLog.push_back(msg);
+    // Limite aumentado para soportar scroll
+    if (consoleLog.size() > 1000) consoleLog.erase(consoleLog.begin());
+    // Auto-scroll al final
+    consoleScrollIndex = consoleLog.size(); 
+}
+
+void ProcessConsoleCommand() {
+    if (consoleInput.empty()) return;
+    AddLog("> " + consoleInput);
+    
+    std::string regStr = GenerateRegex();
+    if (regStr.empty()) {
+        AddLog("[ERROR] Regex is empty. Add nodes first.");
+        consoleInput = "";
+        return;
+    }
+
+    // 1. Validar Ruta Real
+    std::filesystem::path path(consoleInput);
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        AddLog("[ERROR] Path not found on disk.");
+        consoleInput = "";
+        return;
+    }
+
+    AddLog("Processing real files...");
+    
+    try {
+        std::regex pattern(regStr);
+        int totalMatches = 0;
+        int filesScanned = 0;
+
+        // Función auxiliar para leer y analizar un solo archivo
+        auto processFile = [&](const std::filesystem::path& filePath) {
+            std::ifstream file(filePath);
+            if (!file.is_open()) return;
+
+            // Leer todo el contenido
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            std::string content = buffer.str();
+
+            // Buscar coincidencias
+            auto words_begin = std::sregex_iterator(content.begin(), content.end(), pattern);
+            auto words_end = std::sregex_iterator();
+            int count = std::distance(words_begin, words_end);
+
+            if (count > 0) {
+                AddLog("HIT: " + filePath.filename().string() + " (" + std::to_string(count) + ")");
+                totalMatches += count;
+            }
+            filesScanned++;
+        };
+
+        // 2. Determinar si es Archivo o Carpeta
+        if (std::filesystem::is_directory(path)) {
+            AddLog("[INFO] Scanning directory...");
+            for (const auto& entry : std::filesystem::directory_iterator(path)) {
+                if (entry.is_regular_file()) {
+                    processFile(entry.path());
+                }
+            }
+        } else if (std::filesystem::is_regular_file(path)) {
+            processFile(path);
+        } else {
+            AddLog("[ERROR] Not a valid file/folder.");
+        }
+
+        AddLog("[DONE] Scanned " + std::to_string(filesScanned) + " files.");
+        AddLog("[RESULT] Found " + std::to_string(totalMatches) + " total matches.");
+
+    } catch (const std::regex_error& e) {
+        AddLog("[ERROR] Invalid Regex logic.");
+    } catch (const std::exception& e) {
+        AddLog("[ERROR] System: " + std::string(e.what()));
+    }
+
+    consoleInput = "";
 }
 
 // ----------------------------------------------------------------------------------
@@ -311,291 +253,358 @@ void DrawTextCustom(const char* text, float x, float y, float fontSize, Color co
 // ----------------------------------------------------------------------------------
 
 int main() {
-    // Initialization
-    const int screenWidth = 1200;
-    const int screenHeight = 900; // Increased height for more UI
+    const int screenWidth = 1280;
+    const int screenHeight = 900;
     
-    // 3. Make window resizable
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE); 
-    InitWindow(screenWidth, screenHeight, "Visual Regex Builder - Raylib C++ Prototype");
+    InitWindow(screenWidth, screenHeight, "Visual Regex - Console Edition");
 
-    // FONT LOADING
     mainFont = LoadFontEx("sources/font.ttf", 32, 0, 0); 
-    if (mainFont.texture.id == 0) {
-        std::cout << "WARNING: Could not load sources/font.ttf, using default." << std::endl;
-        mainFont = GetFontDefault();
-    } else {
-        SetTextureFilter(mainFont.texture, TEXTURE_FILTER_BILINEAR); 
-    }
+    if (mainFont.texture.id == 0) mainFont = GetFontDefault();
 
     SetTargetFPS(60);
-
-    // Init Camera
     camera.zoom = 1.0f;
-    camera.target = { 0, 0 };
-    camera.offset = { 0, 0 };
-    camera.rotation = 0.0f;
 
-    // Add default start node
+    SetExitKey(KEY_NULL); // Disable default ESC behavior
+
     AddNode(NODE_START, 100, 300);
-    
+    int editingNodeId = -1;
     float copyFeedbackTimer = 0.0f;
+    
+    // Initial Log
+    AddLog("Visual Regex Console v1.0");
+    AddLog("Type a directory path to scan...");
 
-    // Main Loop
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
         if (copyFeedbackTimer > 0) copyFeedbackTimer -= dt;
+        cursorBlinkTimer += dt;
 
         Vector2 mouseScreen = GetMousePosition();
         Vector2 mouseWorld = GetScreenToWorld2D(mouseScreen, camera);
 
-        // --- CONTROLS ---
-        float wheel = GetMouseWheelMove();
-        if (wheel != 0) {
-            Vector2 mouseWorldBeforeZoom = GetScreenToWorld2D(mouseScreen, camera);
-            camera.zoom += (wheel * 0.125f);
-            if (camera.zoom < 0.1f) camera.zoom = 0.1f;
-            if (camera.zoom > 3.0f) camera.zoom = 3.0f;
-            Vector2 mouseWorldAfterZoom = GetScreenToWorld2D(mouseScreen, camera);
-            camera.target.x += (mouseWorldBeforeZoom.x - mouseWorldAfterZoom.x);
-            camera.target.y += (mouseWorldBeforeZoom.y - mouseWorldAfterZoom.y);
+        // --- INPUT HANDLING ---
+        
+        // Toggle Console (T key) - Only if not editing a node
+        // NOTE: If console is OPEN, we capture input, so we use ESC to close to allow typing 't'
+        if (IsKeyPressed(KEY_T) && !showConsole && editingNodeId == -1) {
+            showConsole = true;
         }
 
-        if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE) || (IsKeyDown(KEY_SPACE) && IsMouseButtonDown(MOUSE_LEFT_BUTTON))) {
-            Vector2 delta = GetMouseDelta();
-            delta.x = delta.x * (-1.0f / camera.zoom);
-            delta.y = delta.y * (-1.0f / camera.zoom);
-            camera.target.x += delta.x;
-            camera.target.y += delta.y;
-        }
-
-        // --- INTERACTION ---
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !IsKeyDown(KEY_SPACE)) {
-            // Only interact if NOT clicking on UI (simple check: mouse Y < height - 200?)
-            // For now, we trust the Z-order drawing or assume simple intersection check.
+        if (showConsole) {
+            // CONSOLE INPUT MODE
+            if (IsKeyPressed(KEY_ESCAPE)) showConsole = false;
             
-            bool clickedNode = false;
-            for (int i = nodes.size() - 1; i >= 0; i--) {
-                if (CheckCollisionPointRec(mouseWorld, nodes[i].rect)) {
-                    selectedNodeId = nodes[i].id;
-                    nodes[i].isDragging = true;
-                    mouseOffset.x = mouseWorld.x - nodes[i].rect.x;
-                    mouseOffset.y = mouseWorld.y - nodes[i].rect.y;
-                    clickedNode = true;
-                    break; 
+            if (IsKeyPressed(KEY_ENTER)) ProcessConsoleCommand();
+
+            // --- Paste from Clipboard (Ctrl+V) ---
+            if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_V)) {
+                const char* clipboardText = GetClipboardText();
+                if (clipboardText != nullptr) {
+                    consoleInput += std::string(clipboardText);
                 }
             }
-            if (!clickedNode) {
-                // Check if clicking background to deselect?
-                // But buttons consume clicks too.
-                // Simple hack: if click is in UI area, don't deselect? 
-                // Let's just deselect if not node.
-                 if (mouseScreen.y < GetScreenHeight() - 180 && mouseScreen.y > 80)
-                    selectedNodeId = -1;
-            }
-        }
 
-        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-            for (auto& node : nodes) node.isDragging = false;
-        }
-
-        if (selectedNodeId != -1) {
-            for (auto& node : nodes) {
-                if (node.id == selectedNodeId && node.isDragging) {
-                    node.rect.x = mouseWorld.x - mouseOffset.x;
-                    node.rect.y = mouseWorld.y - mouseOffset.y;
+            int key = GetCharPressed();
+            while (key > 0) {
+                if ((key >= 32) && (key <= 125)) {
+                    consoleInput += (char)key;
                 }
+                key = GetCharPressed();
             }
-        }
-
-        // Connect
-        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-            for (const auto& node : nodes) {
-                if (CheckCollisionPointRec(mouseWorld, node.rect)) {
-                    isCreatingConnection = true;
-                    connectionStartNodeId = node.id;
-                    break;
-                }
+            if (IsKeyPressed(KEY_BACKSPACE) && !consoleInput.empty()) {
+                consoleInput.pop_back();
             }
-        }
-
-        if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON) && isCreatingConnection) {
-            isCreatingConnection = false;
-            for (const auto& node : nodes) {
-                if (CheckCollisionPointRec(mouseWorld, node.rect) && node.id != connectionStartNodeId) {
-                    for (size_t k = 0; k < connections.size(); ) {
-                        if (connections[k].fromNodeId == connectionStartNodeId) {
-                            connections.erase(connections.begin() + k);
-                        } else {
-                            k++;
+        } 
+        else if (editingNodeId != -1) {
+            // NODE EDITING MODE
+            if (IsKeyPressed(KEY_ENTER) || (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !CheckCollisionPointRec(mouseWorld, nodes[0].rect))) { 
+                editingNodeId = -1;
+                for(auto& n : nodes) n.isEditing = false;
+            } else {
+                int key = GetCharPressed();
+                while (key > 0) {
+                    if ((key >= 32) && (key <= 125)) {
+                        for(auto& n : nodes) if (n.id == editingNodeId) {
+                            n.regexValue += (char)key;
+                            if(n.type == NODE_CUSTOM) n.title = n.regexValue; 
                         }
                     }
-                    connections.push_back({connectionStartNodeId, node.id});
-                    break;
+                    key = GetCharPressed();
+                }
+                if (IsKeyPressed(KEY_BACKSPACE)) {
+                    for(auto& n : nodes) if (n.id == editingNodeId && n.regexValue.length() > 0) {
+                        n.regexValue.pop_back();
+                        if(n.type == NODE_CUSTOM) n.title = n.regexValue;
+                    }
                 }
             }
-            connectionStartNodeId = -1;
+        } else {
+            // CANVAS NAVIGATION MODE
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0) {
+                Vector2 mouseWorldBeforeZoom = GetScreenToWorld2D(mouseScreen, camera);
+                camera.zoom += (wheel * 0.125f);
+                if (camera.zoom < 0.2f) camera.zoom = 0.2f;
+                if (camera.zoom > 3.0f) camera.zoom = 3.0f;
+                Vector2 mouseWorldAfterZoom = GetScreenToWorld2D(mouseScreen, camera);
+                camera.target.x += (mouseWorldBeforeZoom.x - mouseWorldAfterZoom.x);
+                camera.target.y += (mouseWorldBeforeZoom.y - mouseWorldAfterZoom.y);
+            }
+            if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE) || (IsKeyDown(KEY_SPACE) && IsMouseButtonDown(MOUSE_LEFT_BUTTON))) {
+                Vector2 delta = GetMouseDelta();
+                camera.target.x -= delta.x / camera.zoom;
+                camera.target.y -= delta.y / camera.zoom;
+            }
+
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && mouseScreen.y > 80 && mouseScreen.y < GetScreenHeight() - 180) { 
+                bool clicked = false;
+                for (int i = nodes.size() - 1; i >= 0; i--) {
+                    if (CheckCollisionPointRec(mouseWorld, nodes[i].rect)) {
+                        selectedNodeId = nodes[i].id;
+                        nodes[i].isDragging = true;
+                        mouseOffset = { mouseWorld.x - nodes[i].rect.x, mouseWorld.y - nodes[i].rect.y };
+                        clicked = true; break;
+                    }
+                }
+                if (!clicked) selectedNodeId = -1;
+            }
+
+            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) { for (auto& n : nodes) n.isDragging = false; }
+            if (selectedNodeId != -1) {
+                for (auto& n : nodes) {
+                    if (n.id == selectedNodeId && n.isDragging) {
+                        n.rect.x = mouseWorld.x - mouseOffset.x;
+                        n.rect.y = mouseWorld.y - mouseOffset.y;
+                    }
+                }
+                if (IsKeyPressed(KEY_ENTER)) {
+                    editingNodeId = selectedNodeId;
+                    for(auto& n : nodes) if(n.id == editingNodeId) n.isEditing = true;
+                }
+                if (IsKeyPressed(KEY_DELETE)) {
+                    for (int i = connections.size() - 1; i >= 0; i--) {
+                        if (connections[i].fromNodeId == selectedNodeId || connections[i].toNodeId == selectedNodeId) connections.erase(connections.begin() + i);
+                    }
+                    for (int i = nodes.size() - 1; i >= 0; i--) {
+                        if (nodes[i].id == selectedNodeId) { nodes.erase(nodes.begin() + i); selectedNodeId = -1; break; }
+                    }
+                }
+            }
+
+            if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+                for (const auto& n : nodes) if (CheckCollisionPointRec(mouseWorld, n.rect)) { isCreatingConnection = true; connectionStartNodeId = n.id; break; }
+            }
+            if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON) && isCreatingConnection) {
+                isCreatingConnection = false;
+                for (const auto& n : nodes) if (CheckCollisionPointRec(mouseWorld, n.rect) && n.id != connectionStartNodeId) {
+                    connections.push_back({connectionStartNodeId, n.id}); break;
+                }
+            }
         }
 
-        // Delete
-        if (IsKeyPressed(KEY_DELETE) && selectedNodeId != -1) {
-            for (int i = connections.size() - 1; i >= 0; i--) {
-                if (connections[i].fromNodeId == selectedNodeId || connections[i].toNodeId == selectedNodeId) {
-                    connections.erase(connections.begin() + i);
-                }
-            }
-            for (int i = nodes.size() - 1; i >= 0; i--) {
-                if (nodes[i].id == selectedNodeId) {
-                     nodes.erase(nodes.begin() + i);
-                     selectedNodeId = -1;
-                    break;
-                }
-            }
-        }
-
-        // ------------------------------------------------------------------------------
-        // 2. DRAW
-        // ------------------------------------------------------------------------------
+        // --- DRAW ---
         BeginDrawing();
         ClearBackground(COL_BG);
 
         BeginMode2D(camera);
             DrawGrid2D(100, 40.0f);
 
-            // Draw Connections
             for (const auto& conn : connections) {
-                Vector2 start = {0,0}, end = {0,0};
+                Vector2 s, e;
                 for (const auto& n : nodes) {
-                    if (n.id == conn.fromNodeId) start = { n.rect.x + n.rect.width, n.rect.y + n.rect.height/2 };
-                    if (n.id == conn.toNodeId) end = { n.rect.x, n.rect.y + n.rect.height/2 };
+                    if (n.id == conn.fromNodeId) s = { n.rect.x + n.rect.width, n.rect.y + n.rect.height/2 };
+                    if (n.id == conn.toNodeId) e = { n.rect.x, n.rect.y + n.rect.height/2 };
                 }
-                float thickness = 3.0f * (1.0f/camera.zoom > 1.0f ? 1.0f : 1.0f/camera.zoom);
-                DrawLineBezier(start, end, thickness, COL_WIRE); 
+                DrawLineBezier(s, e, 3.0f, COL_WIRE);
             }
-
             if (isCreatingConnection) {
-                Vector2 start = {0,0};
-                for (const auto& n : nodes) {
-                    if (n.id == connectionStartNodeId) {
-                        start = { n.rect.x + n.rect.width, n.rect.y + n.rect.height/2 };
-                        break;
-                    }
-                }
-                DrawLineBezier(start, mouseWorld, 3.0f, COL_WIRE_ACTIVE);
-                for (const auto& node : nodes) {
-                    if (CheckCollisionPointRec(mouseWorld, node.rect) && node.id != connectionStartNodeId) {
-                         DrawRectangleLinesEx(node.rect, 2.0f, YELLOW);
-                    }
-                }
+                Vector2 s;
+                for (const auto& n : nodes) if (n.id == connectionStartNodeId) s = { n.rect.x + n.rect.width, n.rect.y + n.rect.height/2 };
+                DrawLineBezier(s, mouseWorld, 3.0f, COL_WIRE_ACTIVE);
             }
 
-            // Draw Nodes
-            for (const auto& node : nodes) {
-                DrawRectangleRounded({node.rect.x + 4, node.rect.y + 4, node.rect.width, node.rect.height}, 0.3f, 6, Fade(BLACK, 0.5f));
-                DrawRectangleRounded(node.rect, 0.3f, 6, node.color);
-                
-                if (node.id == selectedNodeId) 
-                    DrawRectangleRoundedLines(node.rect, 0.3f, 6, WHITE);
-                else 
-                    DrawRectangleRoundedLines(node.rect, 0.3f, 6, Fade(BLACK, 0.5f));
-
-                DrawTextCustom(node.title.c_str(), node.rect.x + 10, node.rect.y + 20, 20, BLACK);
-                
-                // Inputs/Outputs
-                DrawCircle((int)node.rect.x, (int)node.rect.y + (int)node.rect.height/2, 5, WHITE);
-                DrawCircle((int)node.rect.x + (int)node.rect.width, (int)node.rect.y + (int)node.rect.height/2, 5, WHITE);
+            for (const auto& n : nodes) {
+                DrawRectangleRounded(n.rect, 0.2f, 8, n.isEditing ? RED : n.color);
+                DrawRectangleRoundedLines(n.rect, 0.2f, 8, (n.id == selectedNodeId) ? WHITE : BLACK);
+                std::string displayStr = n.title;
+                if (n.isEditing && n.type != NODE_CUSTOM) displayStr = n.regexValue;
+                DrawTextEx(mainFont, displayStr.c_str(), {n.rect.x + 10, n.rect.y + 20}, 18, 1.0f, BLACK);
             }
         EndMode2D();
 
-        // --- UI ---
-        int w = GetScreenWidth();
-        int h = GetScreenHeight();
+        // UI Header
+        int curW = GetScreenWidth(); int curH = GetScreenHeight();
+        DrawRectangle(0, 0, curW, 80, Fade(BLACK, 0.9f));
+        std::string reg = GenerateRegex();
+        DrawTextEx(mainFont, "REGEX:", {20, 30}, 20, 1.0f, LIGHTGRAY);
+        DrawTextEx(mainFont, reg.c_str(), {100, 25}, 30, 1.0f, YELLOW);
         
-        // TOP PANEL
-        DrawRectangle(0, 0, w, 80, Fade(BLACK, 0.85f));
-        std::string regexResult = GenerateRegex();
-        DrawTextCustom("REGEX:", 20, 30, 20, LIGHTGRAY);
-        DrawTextCustom(regexResult.c_str(), 100, 30, 30, YELLOW);
-
-        Rectangle copyBtnRec = { (float)w - 180, 20, 160, 40 };
-        const char* btnText = (copyFeedbackTimer > 0) ? "COPIED!" : "COPY";
-        if (GuiButton(copyBtnRec, btnText)) {
-            SetClipboardText(regexResult.c_str());
-            copyFeedbackTimer = 2.0f; 
+        if (GuiButton({(float)curW - 170, 20, 150, 40}, copyFeedbackTimer > 0 ? "COPIED!" : "COPY")) {
+            SetClipboardText(reg.c_str()); copyFeedbackTimer = 2.0f;
         }
 
-        // BOTTOM PANEL (Expanded for more buttons)
+        // Bottom UI Panel
         int panelHeight = 180;
-        DrawRectangle(0, h - panelHeight, w, panelHeight, Fade(BLACK, 0.9f));
-        DrawTextCustom("Pan: Mid-Click | Zoom: Wheel | R-Click: Connect | Del: Delete", 20, h - panelHeight + 10, 16, GRAY);
+        DrawRectangle(0, curH - panelHeight, curW, panelHeight, Fade(BLACK, 0.9f));
+        DrawTextEx(mainFont, "Pan: Mid-Click | Zoom: Wheel | R-Click: Connect | Del: Delete | Enter: Edit Node | T: Terminal", {20, (float)curH - panelHeight + 10}, 16, 1.0f, GRAY);
 
-        Vector2 c = GetScreenToWorld2D({ (float)w/2, (float)h/2 }, camera);
-        
-        // BUTTON LAYOUT
-        // Grid configuration
-        int startX = 20;
-        int startY = h - panelHeight + 40;
-        int btnW = 140;
-        int btnH = 35;
-        int gapX = 150;
-        int gapY = 45;
+        Vector2 c = GetScreenToWorld2D({ (float)curW/2, (float)curH/2 }, camera);
+        int startX = 20; int startY = curH - panelHeight + 40;
+        int btnW = 140; int btnH = 35; int gapX = 150; int gapY = 45;
 
-        // Row 1: Basic Classes
+        // Row 1
         int x = startX; int y = startY;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "CUSTOM TEXT")) AddNode(NODE_CUSTOM, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Letters")) AddNode(NODE_TEXT, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Numbers")) AddNode(NODE_DIGIT, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Word Chars")) AddNode(NODE_WORD, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Whitespace")) AddNode(NODE_WHITESPACE, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Any Char")) AddNode(NODE_ANY, c.x, c.y); x+=gapX;
-        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Exact Symbol")) AddNode(NODE_SYMBOL, c.x, c.y); x+=gapX;
         
-        // Row 2: Negated & Quantifiers
+        // Row 2
         x = startX; y += gapY;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Symbol @")) AddNode(NODE_SYMBOL, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Non-Number")) AddNode(NODE_NOT_DIGIT, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Non-Word Char")) AddNode(NODE_NOT_WORD, c.x, c.y); x+=gapX;
-        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Non-Whitespace")) AddNode(NODE_NOT_WHITESPACE, c.x, c.y); x+=gapX;
-        // Separator
         x += 20; 
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Repeat (0+)")) AddNode(NODE_ZERO_OR_MORE, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Repeat (1+)")) AddNode(NODE_ONE_OR_MORE, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Make Optional")) AddNode(NODE_OPTIONAL, c.x, c.y); x+=gapX;
 
-        // Row 3: Structure & Anchors
+        // Row 3
         x = startX; y += gapY;
-        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Start of Line")) AddNode(NODE_START, c.x, c.y); x+=gapX;
-        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "End of Line")) AddNode(NODE_END, c.x, c.y); x+=gapX;
-        x += 20;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Start Line")) AddNode(NODE_START, c.x, c.y); x+=gapX;
+        if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "End Line")) AddNode(NODE_END, c.x, c.y); x+=gapX;
+        x += 20; 
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Begin Group")) AddNode(NODE_GROUP_START, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "Finish Group")) AddNode(NODE_GROUP_END, c.x, c.y); x+=gapX;
         if (GuiButton({(float)x, (float)y, (float)btnW, (float)btnH}, "OR (Either)")) AddNode(NODE_OR, c.x, c.y); x+=gapX;
 
+        // DRAW CONSOLE OVERLAY
+        if (showConsole) {
+            float conH = 400;
+            DrawRectangle(0, 0, curW, curH, Fade(BLACK, 0.6f)); // Dim background
+            
+            Rectangle conRect = { (float)curW/2 - 300, 100, 600, conH };
+            DrawRectangleRec(conRect, Fade(BLACK, 0.95f));
+            DrawRectangleLinesEx(conRect, 2, GREEN);
+
+            // Title
+            DrawRectangle(conRect.x, conRect.y, conRect.width, 40, Fade(GREEN, 0.2f));
+            DrawTextEx(mainFont, "TERMINAL - DIRECTORY SCANNER", {conRect.x + 20, conRect.y + 10}, 20, 1.0f, GREEN);
+            
+            // Close Button
+            if (GuiButton({conRect.x + conRect.width - 40, conRect.y, 40, 40}, "X")) showConsole = false;
+
+            // --- SCROLLBAR LOGIC ---
+            // Calculate content metrics
+            float lineHeight = 25.0f;
+            float contentAreaHeight = conH - 100; // Header (50) + Footer (50)
+            int visibleLines = (int)(contentAreaHeight / lineHeight);
+            int totalLines = (int)consoleLog.size();
+            int maxScroll = std::max(0, totalLines - visibleLines);
+
+            // Clamp Scroll
+            if (consoleScrollIndex < 0) consoleScrollIndex = 0;
+            if (consoleScrollIndex > maxScroll) consoleScrollIndex = maxScroll;
+
+            // Mouse Wheel Scrolling
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0) {
+                consoleScrollIndex -= (int)wheel;
+                if (consoleScrollIndex < 0) consoleScrollIndex = 0;
+                if (consoleScrollIndex > maxScroll) consoleScrollIndex = maxScroll;
+            }
+
+            // Scrollbar Geometry
+            Rectangle scrollTrack = { conRect.x + conRect.width - 20, conRect.y + 50, 15, contentAreaHeight };
+            
+            // Handle Scrollbar Dragging
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouseScreen, scrollTrack)) {
+                isDraggingScrollbar = true;
+            }
+            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+                isDraggingScrollbar = false;
+            }
+
+            if (isDraggingScrollbar) {
+                // Map mouse Y relative to track height to scroll index
+                float relativeY = mouseScreen.y - scrollTrack.y;
+                float ratio = relativeY / scrollTrack.height;
+                consoleScrollIndex = (int)(ratio * totalLines);
+                // Re-clamp
+                if (consoleScrollIndex < 0) consoleScrollIndex = 0;
+                if (consoleScrollIndex > maxScroll) consoleScrollIndex = maxScroll;
+            }
+
+            // Draw Scrollbar Track
+            DrawRectangleRec(scrollTrack, Fade(GREEN, 0.1f));
+            
+            // Draw Scrollbar Thumb
+            if (totalLines > 0) {
+                float viewRatio = (float)visibleLines / (float)std::max(visibleLines, totalLines);
+                float thumbHeight = std::max(20.0f, scrollTrack.height * viewRatio);
+                float scrollRatio = (float)consoleScrollIndex / (float)std::max(1, totalLines - visibleLines);
+                // If all lines fit, ratio is 0
+                if (maxScroll == 0) scrollRatio = 0;
+                
+                float thumbY = scrollTrack.y + (scrollTrack.height - thumbHeight) * scrollRatio;
+                Rectangle scrollThumb = { scrollTrack.x, thumbY, scrollTrack.width, thumbHeight };
+                
+                DrawRectangleRec(scrollThumb, isDraggingScrollbar ? GREEN : Fade(GREEN, 0.5f));
+            }
+
+            // --- DRAW LOGS ---
+            // Only draw visible lines based on scroll
+            int startLine = consoleScrollIndex;
+            int endLine = std::min((int)consoleLog.size(), startLine + visibleLines);
+
+            float logY = conRect.y + 50;
+            for (int i = startLine; i < endLine; i++) {
+                std::string log = consoleLog[i];
+                Color txtColor = GREEN;
+                if (log.find("[ERROR]") != std::string::npos) txtColor = RED;
+                else if (log.find("[SUCCESS]") != std::string::npos) txtColor = YELLOW;
+                else if (log.find("HIT:") != std::string::npos) txtColor = ORANGE; // Hits in orange
+                else if (log.find(">") != std::string::npos) txtColor = WHITE;
+                
+                DrawTextEx(mainFont, log.c_str(), {conRect.x + 20, logY}, 18, 1.0f, txtColor);
+                logY += lineHeight;
+            }
+
+            // Input Line
+            float inputY = conRect.y + conH - 50;
+            DrawRectangle(conRect.x + 10, inputY, conRect.width - 20, 40, Fade(GREEN, 0.1f));
+            DrawTextEx(mainFont, ">", {conRect.x + 20, inputY + 10}, 20, 1.0f, GREEN);
+            
+            std::string cursor = ((int)(cursorBlinkTimer * 2) % 2 == 0) ? "_" : "";
+            // Ensure input text fits? For now just clip
+            BeginScissorMode((int)conRect.x + 45, (int)inputY, (int)conRect.width - 60, 40);
+                DrawTextEx(mainFont, (consoleInput + cursor).c_str(), {conRect.x + 45, inputY + 10}, 20, 1.0f, WHITE);
+            EndScissorMode();
+            
+            DrawTextEx(mainFont, "ESC: Close | ENTER: Scan | Ctrl+V: Paste", {conRect.x + 20, conRect.y + conH + 10}, 16, 1.0f, WHITE);
+        }
+
         EndDrawing();
     }
-
-    if (mainFont.texture.id != GetFontDefault().texture.id) UnloadFont(mainFont); 
     CloseWindow();
     return 0;
 }
 
-// ----------------------------------------------------------------------------------
-// UI Implementation
-// ----------------------------------------------------------------------------------
 bool GuiButton(Rectangle bounds, const char* text) {
-    Vector2 mousePoint = GetMousePosition();
-    bool isPressed = false;
-    Color color = { 60, 60, 60, 255 }; // Dark grey base
-
-    if (CheckCollisionPointRec(mousePoint, bounds)) {
-        color = { 80, 80, 80, 255 };
-        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) color = { 40, 40, 40, 255 };
-        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) isPressed = true;
+    Vector2 m = GetMousePosition();
+    bool pressed = false;
+    Color c = {60, 60, 60, 255};
+    if (CheckCollisionPointRec(m, bounds)) {
+        c = {80, 80, 80, 255};
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) c = {40, 40, 40, 255};
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) pressed = true;
     }
-
-    DrawRectangleRec(bounds, color);
+    DrawRectangleRec(bounds, c);
     DrawRectangleLinesEx(bounds, 1, BLACK);
-    
-    Vector2 textSize = MeasureTextEx(mainFont, text, 18, 1.0f);
-    DrawTextEx(mainFont, text, {bounds.x + bounds.width/2 - textSize.x/2, bounds.y + bounds.height/2 - textSize.y/2}, 18, 1.0f, WHITE);
-
-    return isPressed;
+    Vector2 size = MeasureTextEx(mainFont, text, 18, 1.0f);
+    DrawTextEx(mainFont, text, {bounds.x + bounds.width/2 - size.x/2, bounds.y + bounds.height/2 - size.y/2}, 18, 1.0f, WHITE);
+    return pressed;
 }
