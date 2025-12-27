@@ -3,4 +3,4 @@ g++ main.cpp ^
  -LC:\raylib\raylib\build\raylib ^
  -lraylib ^
  -lopengl32 -lgdi32 -lwinmm ^
- -o visualregex.exe
+ -o regexstudio.exe
