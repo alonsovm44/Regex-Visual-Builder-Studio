@@ -1,5 +1,5 @@
 /**
- * VISUAL REGEX BUILDER (Pro Edition - Final Fixes + Templates)
+ * VISUAL REGEX BUILDER v1.0 (Pro Edition - Final Fixes + Templates)
  * Language: C++
  * Library: Raylib
  * Description: Node editor with robust Command Parsing, High-Visibility UI, and Regex Templates.
@@ -735,7 +735,7 @@ int main() {
     const int screenWidth = 1280;
     const int screenHeight = 900;
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE); 
-    InitWindow(screenWidth, screenHeight, "Visual Regex - Pro Edition");
+    InitWindow(screenWidth, screenHeight, "Regex Studio Visual Builder");
 
     mainFont = LoadFontEx("sources/font.ttf", 32, 0, 0); 
     if (mainFont.texture.id == 0) mainFont = GetFontDefault();
