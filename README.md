@@ -1,125 +1,121 @@
-Visual Regex Builder 
+# Regex Studio — Visual Regex Builder for Developers
 
-Regex Visual Builder a node-based development environment designed to simplify the creation, testing, and debugging of Regular Expressions. Instead of writing complex and cryptic syntax strings manually, users can construct logic visually by connecting nodes, making Regex more accessible, readable, and maintainable.
+**Regex Studio** is a **visual, node-based developer tool** for building, testing, and debugging regular expressions.  
+Instead of writing fragile and hard-to-read regex strings manually, developers can **construct patterns visually**, inspect matches step-by-step, and export production-ready code for multiple languages.
 
-Built from scratch using C++ and the Raylib library, it offers a lightweight and high-performance experience with a distinctive visual interface.
+Built in **C++** using **Raylib**, Regex Studio is designed to be **lightweight, fast, and developer-focused**.
 
-Key Features
+---
 
-Visual Node Editor
+## Why Regex Studio
 
-Construct patterns using a drag-and-drop interface. Nodes are color-coded by category for easy identification:
+Regular expressions are powerful but notoriously difficult to:
+- Read
+- Debug
+- Maintain
 
-Anchors: Start of line, End of line.
+Regex Studio addresses this by turning regex construction into a **visual graph**, while still producing **exact, standards-compliant regex output** for real-world use.
 
-Character Classes: Text, Digits, Words, Whitespace, and their negations.
+This makes it useful for:
+- Developers working with complex patterns
+- Log analysis and data mining
+- Teaching and learning regex
+- Debugging legacy expressions
 
-Quantifiers: Zero or more (*), One or more (+), Optional (?).
+---
 
-Structure: Capture Groups and Logical OR.
+## Core Features
 
-Custom: Editable nodes for inserting raw text or specific regex fragments.
+### Visual Node Editor
+Build regex patterns using a drag-and-drop canvas:
+- **Anchors**: Start (`^`), End (`$`)
+- **Character Classes**: Digits, Words, Whitespace, Text (and negations)
+- **Quantifiers**: `*`, `+`, `?`
+- **Structure**: Capture Groups, Logical OR
+- **Custom Nodes**: Insert raw or specialized regex fragments
 
-Live Playground & Debugger
+Nodes are **color-coded by category** for clarity.
 
-Real-time Highlighting: A side panel allows users to type test strings and see matches highlighted instantly as the node graph is modified.
+---
 
-Visual Debugger: A step-by-step inspection mode that allows users to navigate through individual matches. It provides a detailed breakdown of capture groups, showing exactly what part of the text is being captured by specific sections of the pattern.
+### Live Playground & Visual Debugger
 
-Multi-Language Code Export
+- **Real-Time Highlighting**  
+  Test input strings and instantly see matches update as the graph changes.
 
-The application solves the common issue of string escaping. Users can view the full generated pattern and export it as a code snippet ready for copy-pasting into various programming languages:
+- **Step-by-Step Debugger**  
+  Navigate through individual matches and inspect capture groups visually, showing *exactly* which node produced each match.
 
-C++ (std::regex with escaped backslashes)
+---
 
-Python (raw strings)
+### Multi-Language Code Export
 
-JavaScript (regex literals)
+Regex Studio automatically handles string escaping and exports regex code ready to paste into:
 
-C# (verbatim strings)
+- **C++** (`std::regex`)
+- **Python** (raw strings)
+- **JavaScript** (regex literals)
+- **C#** (verbatim strings)
+- **Java** (`Pattern.compile`)
 
-Java (Pattern.compile with escaped backslashes)
+---
 
-Native File Scanner (Terminal)
+### Native File Scanner
 
-A built-in drop-down console (toggle with 'T') allows users to input a directory path to scan real files on the local hard drive. The application recursively reads files and reports match counts based on the current visual pattern, making it a powerful tool for log analysis or data mining.
+A built-in terminal allows scanning **real files and directories** on disk using the current visual pattern:
+- Recursive directory scanning
+- Match count reporting
+- Useful for log analysis and data exploration
 
-Professional Workflow Tools
+---
 
-Undo/Redo System: Full history stack for reverting changes.
+### Productivity & Workflow Tools
 
-Clipboard: Copy, Cut, and Paste groups of nodes while maintaining relative structure.
+- Undo / Redo with full history
+- Copy, cut, and paste node groups
+- Multi-select and group dragging
+- Save and load projects (`.vreg`)
+- Built-in templates (Emails, URLs, Dates, IPv4, etc.)
 
-Persistence: Save and Load projects to custom .vreg files.
+---
 
-Templates: A library of drag-and-drop presets for common patterns like Email addresses, URLs, Dates (ISO 8601), and IPv4 addresses.
+## Controls (Quick Reference)
 
-Multi-Select: Box selection and group dragging for organizing complex logic.
+- **Left Click**: Select / Drag node
+- **Right Click**: Create connection
+- **Middle Click / Space + Drag**: Pan
+- **Mouse Wheel**: Zoom
+- **Ctrl + Z / Ctrl + Y**: Undo / Redo
+- **T**: Toggle file scanner terminal
+- **?**: Toggle help overlay
 
-Controls and Shortcuts
+---
 
-Canvas Interaction
+## Build from Source
 
-Left Click: Select node / Drag node.
+### Requirements
+- C++17-compatible compiler
+- Raylib
 
-Left Drag (Empty Space): Box selection (multi-select).
+### Linux
+```bash
+g++ main.cpp -lraylib -lGL -lm -lpthread -ldl -o RegexStudio
+Windows (MinGW)
+g++ main.cpp -lraylib -lopengl32 -lgdi32 -lwinmm -o RegexStudio.exe
+Ensure the sources/ directory (including font.ttf) is present next to the executable.
+````
+Technical Overview
+Language: C++17
 
-Shift + Left Click: Add node to selection.
+Rendering / UI: Raylib (immediate-mode GUI)
 
-Right Click: Create connection between nodes.
+Regex Engine: C++ Standard Library (<regex>)
 
-Middle Click (or Space + Drag): Pan view.
+Filesystem: C++ <filesystem> & <fstream>
 
-Mouse Wheel: Zoom in / Zoom out.
+Project Status
+Regex Studio is an experimental developer productivity tool.
+It is intended for learning, exploration, and real-world debugging—not as a regex engine replacement.
 
-Editing
-
-ENTER: Edit the selected node (for Custom Text nodes).
-
-DELETE: Delete selected nodes and connections.
-
-Ctrl + C: Copy selected nodes.
-
-Ctrl + X: Cut selected nodes.
-
-Ctrl + V: Paste nodes.
-
-Ctrl + Z: Undo.
-
-Ctrl + Y / Shift + Ctrl + Z: Redo.
-
-Tools
-
-T: Toggle the File Scanner Terminal.
-
-?: Toggle the Help overlay.
-
-Building from Source
-
-This project requires a C++ compiler (like g++) and the Raylib library.
-
-Dependencies
-
-Raylib: A simple and easy-to-use library to enjoy videogames programming.
-
-Compilation Command (Example for MinGW/Windows)
-
-g++ main.cpp -lraylib -lopengl32 -lgdi32 -lwinmm -o VisualRegex.exe
-
-
-Compilation Command (Example for Linux)
-
-g++ main.cpp -lraylib -lGL -lm -lpthread -ldl -rt -Xlinker -zmuldefs -o VisualRegex
-
-
-Ensure that the sources folder containing font.ttf is present in the same directory as the executable for text rendering to work correctly.
-
-Technical Details
-
-Language: C++ (Standard 17 or higher recommended for filesystem support).
-
-Graphics Engine: Raylib (Immediate Mode GUI implementation).
-
-Regex Engine: C++ Standard Library (<regex>).
-
-File System: C++ Standard Library (<filesystem> and <fstream>)
+License
+MIT
